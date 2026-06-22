@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tally</title>
+<style>
+  :root{
+    /* SURFACES */
+    --bg:        #F7F7F5;
+    --card:      #FFFFFF;
+    --bg-sunken: #FAFAF8;
+    --line:      #ECECEA;
+    --line-soft: #F1F1EF;
+    --line-strong:#DEDBD4;
+
+    /* INK */
+    --ink:       #16181C;
+    --ink-2:     #565A62;
+    --muted:     #6B7079;
+
+    /* ACCENT */
+    --accent:     #1F6B4F;
+    --accent-ink: #FFFFFF;
+    --accent-wash:#EBF1EE;
+    --accent-line:#CFE0D7;
+
+    /* SEMANTIC */
+    --good:      #2E7D5B;
+    --good-wash: #E9F1EC;
+    --bad:       #B4463C;
+    --bad-wash:  #F6EBEA;
+
+    /* MUTED CATEGORICAL RAMP */
+    --cat-groceries:     #5E8B7E;
+    --cat-dining:        #C58A54;
+    --cat-transport:     #6E84A3;
+    --cat-shopping:      #9A7AA0;
+    --cat-bills:         #B06A5E;
+    --cat-subscriptions: #5C9A9A;
+    --cat-health:        #C2748B;
+    --cat-entertainment: #7A78A8;
+    --cat-travel:        #6FA0A8;
+    --cat-other:         #9AA0A6;
+
+    /* RADII */
+    --r-sm: 8px;
+    --r:    12px;
+    --r-lg: 14px;
+
+    /* SPACING SCALE */
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px;
+
+    /* SHADOWS */
+    --shadow:       0 1px 2px rgba(16,18,22,.04);
+    --shadow-sheet: 0 -8px 24px rgba(16,18,22,.12);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; padding:0}
+
+  /* Keyboard focus ring (visible only for keyboard/switch users) */
+  :where(button,input,[role=button],[tabindex]):focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px; border-radius:6px;
+  }
+  /* SVG trend bars carry their own radius; ring the rect via outline on the group */
+  g[role=button]:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.45;
+  }
+  .app{max-width:480px; margin:0 auto; padding:0 16px 40px; min-height:100vh}
+
+  /* NUMBER UTILITY */
+  .num{ font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1; letter-spacing:-.01em; }
+
+  /* TYPE SCALE utilities */
+  .t-hero{ font-size:34px; font-weight:700; letter-spacing:-.025em; line-height:1.05; }
+  .t-h1{ font-size:19px; font-weight:600; letter-spacing:-.02em; }
+  .t-h2{ font-size:16px; font-weight:600; letter-spacing:-.01em; }
+  .t-body{ font-size:15px; font-weight:450; }
+  .t-amt{ font-size:15px; font-weight:600; }
+  .t-label{ font-size:13px; font-weight:500; color:var(--ink-2); }
+  .t-meta{ font-size:12px; font-weight:450; color:var(--muted); }
+  .t-cap{ font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+
+  /* ICONS */
+  .ic{flex:none; display:block}
+  .ic-wrap{width:26px; height:26px; display:flex; align-items:center; justify-content:center; color:var(--ink-2); flex:none}
+
+  /* Header */
+  header{padding:20px 2px 8px; display:flex; align-items:center; justify-content:space-between}
+  .brand{display:flex; align-items:center; gap:10px}
+  .brand .logo{width:28px; height:28px; border-radius:8px; background:var(--accent-wash); color:var(--accent);
+    display:flex; align-items:center; justify-content:center}
+  .brand h1{font-size:19px; font-weight:600; letter-spacing:-.02em; margin:0}
+  .menu-btn{background:var(--card); border:1px solid var(--line); border-radius:8px;
+    width:36px; height:36px; cursor:pointer; color:var(--ink-2); display:flex; align-items:center; justify-content:center}
+
+  /* Month switcher */
+  .month{display:flex; align-items:center; justify-content:center; gap:12px; margin:4px 0 16px}
+  .month button{background:var(--card); border:1px solid var(--line); border-radius:50%;
+    width:40px; height:40px; cursor:pointer; color:var(--ink-2); display:flex; align-items:center; justify-content:center}
+  .month button:disabled{opacity:.3; cursor:default}
+  .month .label{font-size:16px; font-weight:600; letter-spacing:-.01em; min-width:150px; text-align:center}
+
+  /* Tab bar */
+  .tabbar{display:flex; gap:4px; background:var(--bg-sunken); border:1px solid var(--line);
+    border-radius:10px; padding:3px; margin:0 0 16px}
+  .tabbar .tab{flex:1; border:none; background:none; border-radius:8px; padding:12px 0;
+    font-size:15px; font-weight:500; color:var(--muted); cursor:pointer}
+  .tabbar .tab.active{background:var(--accent-wash); color:var(--accent); font-weight:600}
+
+  /* Plan-specific */
+  .plan-income-input{width:100%; border:none; outline:none; background:none; text-align:center;
+    font-size:34px; font-weight:700; letter-spacing:-.025em; color:var(--ink); padding:0}
+  .plan-income-input::placeholder{color:var(--muted)}
+  .income-edit{font-size:16px; font-weight:600; letter-spacing:-.01em; border:none; outline:none;
+    background:none; width:70%; color:var(--ink)}
+  .icon-btn{background:none; border:none; min-width:44px; min-height:44px; padding:8px; cursor:pointer; color:var(--ink-2);
+    display:inline-flex; align-items:center; justify-content:center}
+  .icon-btn:active{opacity:.7}
+  .split-row{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0;
+    border-bottom:1px solid var(--line)}
+  .split-row:last-child{border-bottom:none}
+  .divider{border-top:1px solid var(--line); margin:12px 0}
+
+  /* Cards */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px;
+    margin-bottom:12px; box-shadow:var(--shadow)}
+
+  /* Hero */
+  .hero{text-align:center}
+  .hero .cap{margin-bottom:4px}
+  .hero .big{color:var(--ink)}
+  .hero .compare{margin-top:6px; display:inline-flex; align-items:center; gap:4px}
+  .hero .compare.up{color:var(--bad)}
+  .hero .compare.down{color:var(--good)}
+  .hero .compare.flat{color:var(--muted)}
+  .hero .compare .ic{color:currentColor}
+  .safe-block{margin-top:14px; text-align:left}
+  .safe-row{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:4px}
+  .safe-sub{margin-bottom:2px}
+
+  /* Trend chart */
+  .trend svg{width:100%; height:auto; display:block}
+  .trend .tlabel{font-size:11px; font-weight:600; letter-spacing:.04em; fill:var(--muted)}
+  .trend .tval{font-size:11px; font-weight:600; fill:var(--ink-2)}
+
+  /* Donut */
+  .donut-wrap{display:flex; flex-direction:column; align-items:center}
+  .donut-center .amt{font-size:16px; font-weight:600; letter-spacing:-.01em; fill:var(--ink)}
+  .donut-center .lbl{font-size:11px; font-weight:600; letter-spacing:.06em; fill:var(--muted)}
+
+  /* Section title */
+  .sec-title{font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); margin:6px 2px 8px}
+
+  /* Category rows */
+  .cat-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line)}
+  .cat-row:last-child{border-bottom:none}
+  .cat-mid{flex:1; min-width:0}
+  .cat-name{display:flex; justify-content:space-between; gap:8px; align-items:baseline}
+  .cat-name .nm{font-size:15px; font-weight:450}
+  .cat-name .pct{font-size:12px; font-weight:450; color:var(--muted)}
+  .cat-bar{height:6px; border-radius:4px; background:var(--line-soft); margin-top:6px; overflow:hidden}
+  .cat-bar > span{display:block; height:100%; border-radius:4px}
+  .cat-amt{font-size:15px; font-weight:600; white-space:nowrap; text-align:right; min-width:76px}
+
+  /* Recurring */
+  .recur-head{display:flex; align-items:center; gap:10px; cursor:pointer}
+  .recur-head .rt{flex:1; display:flex; align-items:center; gap:8px}
+  .recur-list{display:none; margin-top:10px; border-top:1px solid var(--line); padding-top:4px}
+  .recur-list.show{display:block}
+
+  /* Transactions */
+  .txn{border-bottom:1px solid var(--line)}
+  .txn:last-child{border-bottom:none}
+  .txn-main{display:flex; align-items:center; gap:12px; padding:11px 0; cursor:pointer}
+  .txn-info{flex:1; min-width:0}
+  .txn-desc{font-size:15px; font-weight:450; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .txn-meta{font-size:12px; color:var(--muted); margin-top:1px}
+  .txn-amt{font-size:15px; font-weight:600; white-space:nowrap}
+  .picker{display:none; flex-wrap:wrap; gap:8px; padding:4px 0 14px 14px}
+  .picker.show{display:flex}
+  .chip{font-size:12px; padding:10px 12px; min-height:44px; border-radius:8px; border:1px solid var(--line);
+    background:var(--card); color:var(--ink-2); cursor:pointer; display:inline-flex; align-items:center; gap:6px}
+  .chip .ic{color:currentColor}
+  .chip.active{border-color:var(--accent-line); background:var(--accent-wash); color:var(--accent); font-weight:600}
+
+  /* Upload */
+  .upload{text-align:center}
+  .upload .add-btn{background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px;
+    padding:14px 16px; font-size:15px; font-weight:600; width:100%; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; gap:8px}
+  .upload .add-btn:active{opacity:.92}
+  .help-toggle{background:none; border:none; color:var(--ink-2); font-size:12px; margin-top:12px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 6px; margin-left:-6px}
+  .help{display:none; text-align:left; font-size:13px; color:var(--ink-2); margin-top:12px;
+    background:var(--bg-sunken); border:1px solid var(--line); border-radius:8px; padding:14px}
+  .help.show{display:block}
+  .help b{color:var(--ink)}
+  .help ul{margin:6px 0 12px; padding-left:18px}
+  .help li{margin:3px 0}
+  .help .note{font-size:12px; color:var(--muted)}
+  .clear-txns{display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    margin-top:12px; padding:10px 14px; min-height:44px; width:100%;
+    background:var(--card); border:1px solid var(--line); border-radius:8px;
+    color:var(--bad); font-size:13px; font-weight:500; cursor:pointer}
+  .clear-txns:active{background:var(--bad-wash)}
+  .clear-txns .ic{color:currentColor}
+
+  /* Empty */
+  .empty{text-align:center; color:var(--muted); padding:30px 10px}
+  .empty .big{display:flex; justify-content:center; color:var(--line-strong); margin-bottom:10px}
+
+  /* Range slider */
+  input[type=range].split{ -webkit-appearance:none; appearance:none; width:100%; height:24px; background:transparent; margin:8px 0 2px; cursor:pointer; }
+  input[type=range].split::-webkit-slider-runnable-track{ height:4px; border-radius:3px;
+    background:linear-gradient(90deg,var(--accent) 0 var(--fill,50%), var(--line-soft) var(--fill,50%) 100%); }
+  input[type=range].split::-moz-range-track{ height:4px; border-radius:3px; background:var(--line-soft); }
+  input[type=range].split::-moz-range-progress{ height:4px; border-radius:3px; background:var(--accent); }
+  input[type=range].split::-webkit-slider-thumb{ -webkit-appearance:none; width:20px; height:20px; border-radius:50%;
+    background:#fff; border:1px solid var(--line-strong); box-shadow:0 1px 2px rgba(16,18,22,.12); margin-top:-8px; }
+  input[type=range].split::-moz-range-thumb{ width:20px; height:20px; border-radius:50%; background:#fff;
+    border:1px solid var(--line-strong); box-shadow:0 1px 2px rgba(16,18,22,.12); }
+
+  /* split editor rows */
+  .slider-row{padding:10px 0; border-bottom:1px solid var(--line)}
+  .slider-row:last-of-type{border-bottom:none}
+  .slider-head{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .slider-head .sl-name{font-size:13px; font-weight:500; color:var(--ink-2)}
+  .slider-head .sl-vals{display:flex; align-items:baseline; gap:8px}
+  .sl-pct-input{width:46px; text-align:right; border:1px solid var(--line); border-radius:8px;
+    padding:4px 6px; font-size:13px; font-weight:600; color:var(--ink); background:var(--card); outline:none}
+  .sl-pct-input:focus{border-color:var(--accent-line)}
+  .sl-pct-input,.plan-income-input,.income-edit{-moz-appearance:textfield; appearance:textfield}
+  .sl-pct-input::-webkit-outer-spin-button,.sl-pct-input::-webkit-inner-spin-button,
+  .plan-income-input::-webkit-outer-spin-button,.plan-income-input::-webkit-inner-spin-button,
+  .income-edit::-webkit-outer-spin-button,.income-edit::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
+  .sl-dollar{font-size:12px; color:var(--muted); min-width:64px; text-align:right}
+  .split-total{font-size:12px; color:var(--muted); margin-top:10px; display:inline-flex; align-items:center; gap:6px}
+  .split-total .ic{color:currentColor}
+  .split-actions{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px}
+  .split-even{background:none; border:none; color:var(--accent);
+    font-size:13px; font-weight:600; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 6px}
+  .split-even:active{opacity:.92}
+  .split-even .ic{color:currentColor}
+  .split-reset{background:none; border:none; color:var(--ink-2); font-size:13px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:8px 6px}
+  .split-reset .ic{color:currentColor}
+
+  /* generic bar */
+  .bar{ height:6px; border-radius:4px; background:var(--line-soft); overflow:hidden; }
+  .bar > span{ display:block; height:100%; border-radius:4px; transition:width .18s ease; }
+
+  /* expander chevron rotation */
+  .chev, .help-toggle .ic, [data-expand] .ic{ transition:transform .18s ease; }
+  .open > .chev, .chev.open, .ic.open{ transform:rotate(180deg); }
+
+  /* Toast */
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--accent-ink); padding:11px 18px; border-radius:10px; font-size:15px;
+    opacity:0; transition:.25s; pointer-events:none; z-index:50; max-width:90%;
+    display:inline-flex; align-items:center; gap:8px}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  .toast .ic{color:currentColor}
+
+  /* Sheet menu */
+  .backdrop{position:fixed; inset:0; background:rgba(16,18,22,.35); display:none; z-index:40}
+  .backdrop.show{display:block}
+  .sheet{position:fixed; left:0; right:0; bottom:0; background:var(--card);
+    border-radius:14px 14px 0 0; padding:10px 16px 28px; max-width:480px; margin:0 auto;
+    transform:translateY(100%); transition:.25s; z-index:45; box-shadow:var(--shadow-sheet)}
+  .sheet.show{transform:translateY(0)}
+  .sheet .grab{width:38px; height:4px; background:var(--line-strong); border-radius:4px; margin:8px auto 14px}
+  .sheet button{display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:none; border:none;
+    padding:15px 6px; font-size:15px; cursor:pointer; border-bottom:1px solid var(--line); color:var(--ink)}
+  .sheet button:last-child{border-bottom:none}
+  .sheet button .ic{color:var(--ink-2)}
+  .sheet button.danger{color:var(--bad)}
+  .sheet button.danger .ic{color:var(--bad)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="logo" id="brandLogo"></span>
+      <h1>Tally</h1>
+    </div>
+    <button class="menu-btn" id="menuBtn" aria-label="Menu"></button>
+  </header>
+
+  <div class="month" id="monthBar"></div>
+  <div class="tabbar" id="tabBar">
+    <button class="tab" data-tab="plan">Plan</button>
+    <button class="tab" data-tab="spending">Spending</button>
+  </div>
+  <div id="content"></div>
+
+  <!-- Persistent file picker: lives outside #content so it survives re-renders.
+       The Add button / Clear control are rendered INSIDE the Spending content and
+       trigger this input via the delegated handlers in wireSpendingExtras(). -->
+  <input type="file" id="fileInput" accept=".csv" multiple hidden />
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="grab"></div>
+  <button id="loadSample"></button>
+  <button id="resetPlan"></button>
+  <button id="clearAll" class="danger"></button>
+</div>
+
+<script>
+/* ---------- Categories & rules ---------- */
+const CATEGORIES = {
+  groceries:     {label:'Groceries',         color:'var(--cat-groceries)'},
+  dining:        {label:'Food & Drink',      color:'var(--cat-dining)'},
+  transport:     {label:'Transport',         color:'var(--cat-transport)'},
+  shopping:      {label:'Shopping',          color:'var(--cat-shopping)'},
+  bills:         {label:'Bills & Utilities', color:'var(--cat-bills)'},
+  subscriptions: {label:'Subscriptions',     color:'var(--cat-subscriptions)'},
+  health:        {label:'Health',            color:'var(--cat-health)'},
+  entertainment: {label:'Entertainment',     color:'var(--cat-entertainment)'},
+  travel:        {label:'Travel',            color:'var(--cat-travel)'},
+  other:         {label:'Other',             color:'var(--cat-other)'},
+};
+const CAT_ORDER = Object.keys(CATEGORIES);
+
+/* ---------- Icons ---------- */
+const ICONS = {
+  groceries:     '<path d="M3 9h18l-1.5 10.5a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5L3 9Z"/><path d="M8 9 10 4M16 9 14 4"/><path d="M9 13v3M15 13v3"/>',
+  dining:        '<path d="M7 3v8M5 3v4a2 2 0 0 0 2 2M9 3v4a2 2 0 0 1-2 2M7 11v10"/><path d="M16 3c-1.5 1-2 3-2 5s.5 3 2 3v10"/>',
+  transport:     '<path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11"/><path d="M4 11h16v5H4z"/><circle cx="7.5" cy="16.5" r="1.3"/><circle cx="16.5" cy="16.5" r="1.3"/>',
+  shopping:      '<path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+  bills:         '<path d="M6 3h12v18l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3L6 21V3Z"/><path d="M9 8h6M9 12h6"/>',
+  subscriptions: '<path d="M4 11a8 8 0 0 1 13.5-4.5L20 9"/><path d="M20 4v5h-5"/><path d="M20 13a8 8 0 0 1-13.5 4.5L4 15"/><path d="M4 20v-5h5"/>',
+  health:        '<path d="M12 20S4 14.5 4 9.2A4.2 4.2 0 0 1 12 7a4.2 4.2 0 0 1 8 2.2C20 14.5 12 20 12 20Z"/>',
+  entertainment: '<path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8Z"/><path d="M4 8 6 4h12l2 4"/><path d="M11 12l3 2-3 2v-4Z"/>',
+  travel:        '<path d="M21 12l-8.5 2L9 21H7l1.5-7L4 13v-2l4.5 1L11 4h2l-1 8 9 0v2Z"/>',
+  other:         '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.2"/><circle cx="8.2" cy="12" r="1.2"/><circle cx="15.8" cy="12" r="1.2"/>',
+  home:    '<path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>',
+  sparkle: '<path d="M12 4l1.8 4.7L18.5 10.5l-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8L12 4Z"/>',
+  coins:   '<path d="M5 9h12a3 3 0 0 1 0 6H5z"/><path d="M5 9v6M9 9v6M13 9v6"/>',
+  logo:    '<path d="M6 5v10M10 5v10M14 5v10M18 5v10M4 17l16-7"/>',
+  chevL:    '<path d="M15 6l-6 6 6 6"/>',
+  chevR:    '<path d="M9 6l6 6-6 6"/>',
+  chevDown: '<path d="M6 9l6 6 6-6"/>',
+  plus:     '<path d="M12 5v14M5 12h14"/>',
+  menu:     '<circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none"/>',
+  pencil:   '<path d="M4 20h4L18 10l-4-4L4 16v4Z"/><path d="M13 7l4 4"/>',
+  reset:    '<path d="M4 11a8 8 0 1 1 2.3 5.7"/><path d="M4 20v-5h5"/>',
+  trash:    '<path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/>',
+  caretUp:  '<path d="M6 14l6-6 6 6"/>',
+  caretDown:'<path d="M6 10l6 6 6-6"/>',
+  dot:      '<circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>',
+  check:    '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+  recurring:'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4l2.5 2"/>'
+};
+function icon(name,size=18){return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;}
+
+/* Default needs/wants bucket for each category (Savings is never a category) */
+const DEFAULT_BUCKET = {
+  groceries:'needs', transport:'needs', bills:'needs', health:'needs',
+  dining:'wants', shopping:'wants', subscriptions:'wants',
+  entertainment:'wants', travel:'wants',
+  other:'wants'
+};
+
+const RULES = [
+  ['groceries',     ['whole foods','trader joe','safeway','kroger','wegmans','aldi','publix','stop & shop','grocery','market','costco',"sam's",'food lion','sprouts','heb']],
+  ['dining',        ['starbucks','dunkin','blue bottle','coffee','cafe','restaurant','grill','pizza','sushi','chipotle','mcdonald','burger','taco','doordash','uber eats','grubhub','sweetgreen','olive garden','panera','wendy','chick-fil','thai','ramen','bakery','deli']],
+  ['transport',     ['shell','chevron','exxon','mobil','arco','speedway',' gas','uber','lyft','transit','mta','parking','toll','metro']],
+  ['shopping',      ['amazon','target','walmart','best buy','nike','sephora','ulta','nordstrom','etsy','ebay','macy','old navy',' gap ','zara','h&m','lululemon','apple store']],
+  ['bills',         ['at&t','verizon','t-mobile','comcast','xfinity','spectrum','electric','water','pg&e','con ed','insurance','rent','mortgage','utility']],
+  ['subscriptions', ['netflix','spotify','hulu','disney','hbo',' max ','apple.com','prime video','youtube','planet fitness','gym','la fitness','equinox','peloton','icloud','adobe','dropbox']],
+  ['health',        ['cvs','walgreens','pharmacy','rite aid','doctor','dental','clinic','hospital','optometr','medical']],
+  ['entertainment', ['amc','cinema','cinemark','regal','ticketmaster','stubhub','steam','playstation','xbox','nintendo','concert','museum']],
+  ['travel',        ['airlines','air lines','delta','united air','southwest','jetblue','hotel','marriott','hilton','airbnb','expedia','booking.com','hertz','rental car']],
+];
+
+function normMerchant(desc){
+  return desc.toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim().split(' ').slice(0,3).join(' ');
+}
+function categorize(desc){
+  const key = normMerchant(desc);
+  if(overrides[key]) return overrides[key];
+  const d = ' ' + desc.toLowerCase() + ' ';
+  for(const [cat,words] of RULES){
+    for(const w of words){ if(d.includes(w)) return cat; }
+  }
+  return 'other';
+}
+
+/* ---------- Sample data ---------- */
+const SAMPLE = [
+  // June 2026 (this month)
+  {date:'2026-06-01', description:'Whole Foods Market',  amount:84.23},
+  {date:'2026-06-01', description:'Netflix.com',          amount:15.49},
+  {date:'2026-06-02', description:'Starbucks',            amount:6.75},
+  {date:'2026-06-02', description:'Shell Oil',            amount:42.10},
+  {date:'2026-06-03', description:'Amazon.com',           amount:37.99},
+  {date:'2026-06-04', description:'Chipotle',             amount:12.85},
+  {date:'2026-06-05', description:"Trader Joe's",         amount:56.40},
+  {date:'2026-06-05', description:'Spotify',              amount:11.99},
+  {date:'2026-06-06', description:'Uber Trip',            amount:18.30},
+  {date:'2026-06-07', description:'Target',               amount:73.21},
+  {date:'2026-06-08', description:'CVS Pharmacy',         amount:24.60},
+  {date:'2026-06-09', description:'Blue Bottle Coffee',   amount:7.25},
+  {date:'2026-06-10', description:'AT&T Wireless',        amount:70.00},
+  {date:'2026-06-11', description:'DoorDash',             amount:28.47},
+  {date:'2026-06-12', description:'Safeway',              amount:61.18},
+  {date:'2026-06-13', description:'AMC Theatres',         amount:32.00},
+  {date:'2026-06-14', description:'Chevron',              amount:39.75},
+  {date:'2026-06-15', description:'Nike Store',           amount:89.99},
+  {date:'2026-06-16', description:'Sweetgreen',           amount:14.50},
+  {date:'2026-06-17', description:'Planet Fitness',       amount:24.99},
+  {date:'2026-06-18', description:'Whole Foods Market',   amount:47.83},
+  {date:'2026-06-18', description:'Walgreens',            amount:18.22},
+  {date:'2026-06-19', description:'Delta Air Lines',      amount:245.00},
+  {date:'2026-06-19', description:'Starbucks',            amount:5.95},
+  {date:'2026-06-20', description:'Comcast Xfinity',      amount:89.99},
+  {date:'2026-06-20', description:'Lyft',                 amount:22.40},
+  {date:'2026-06-21', description:"Trader Joe's",         amount:44.67},
+  // May 2026 (for the comparison)
+  {date:'2026-05-02', description:'Whole Foods Market',   amount:92.15},
+  {date:'2026-05-03', description:'Netflix.com',          amount:15.49},
+  {date:'2026-05-03', description:'Starbucks',            amount:6.50},
+  {date:'2026-05-04', description:'Shell Oil',            amount:40.00},
+  {date:'2026-05-05', description:'Amazon.com',           amount:122.49},
+  {date:'2026-05-06', description:'Olive Garden',         amount:48.30},
+  {date:'2026-05-07', description:'Safeway',              amount:58.90},
+  {date:'2026-05-08', description:'Spotify',              amount:11.99},
+  {date:'2026-05-09', description:'Uber Trip',            amount:15.75},
+  {date:'2026-05-10', description:'Target',               amount:64.10},
+  {date:'2026-05-11', description:'CVS Pharmacy',         amount:31.20},
+  {date:'2026-05-12', description:'AT&T Wireless',        amount:70.00},
+  {date:'2026-05-14', description:'DoorDash',             amount:34.20},
+  {date:'2026-05-15', description:"Trader Joe's",         amount:71.05},
+  {date:'2026-05-16', description:'Chevron',              amount:41.50},
+  {date:'2026-05-18', description:'Sephora',              amount:88.00},
+  {date:'2026-05-19', description:'Sweetgreen',           amount:13.75},
+  {date:'2026-05-20', description:'Planet Fitness',       amount:24.99},
+  {date:'2026-05-21', description:'Comcast Xfinity',      amount:89.99},
+  {date:'2026-05-22', description:'Walgreens',            amount:22.40},
+  {date:'2026-05-24', description:'Whole Foods Market',   amount:66.32},
+  {date:'2026-05-26', description:'AMC Theatres',         amount:28.00},
+  {date:'2026-05-28', description:'Starbucks',            amount:5.95},
+  {date:'2026-05-30', description:'Shell Oil',            amount:38.20},
+];
+
+/* ---------- State ---------- */
+let transactions = [];
+let overrides = {};
+let selectedMonth = null;
+let currentTxns = []; // transactions shown for selected month (for tap handling)
+let plan = null;             // budgeting layer state (tally_plan)
+let activeTab = 'spending';  // 'plan' | 'spending' — not persisted
+
+function defaultPlan(){
+  return {v:1, income:{}, split:{needs:50, wants:30, savings:20}, bucketMap:{}};
+}
+/* Coerce a key to strict zero-padded 'YYYY-MM', or null if it can't be. */
+function normYM(k){
+  const m = String(k).match(/^(\d{4})-(\d{1,2})$/);
+  if(!m) return null;
+  const mo = +m[2];
+  if(mo<1 || mo>12) return null;
+  return m[1] + '-' + String(mo).padStart(2,'0');
+}
+function migratePlan(p){
+  if(!p || typeof p!=='object') p = defaultPlan();
+  if(typeof p.v!=='number') p.v = 1;
+  if(!p.income || typeof p.income!=='object') p.income = {};
+  // Normalize income keys to strict 'YYYY-MM' so carry-forward's lexical sort is correct.
+  const inc = {};
+  for(const k of Object.keys(p.income)){
+    const nk = normYM(k);
+    if(nk!=null && typeof p.income[k]==='number' && !isNaN(p.income[k])) inc[nk] = p.income[k];
+  }
+  p.income = inc;
+  if(!p.bucketMap || typeof p.bucketMap!=='object') p.bucketMap = {};
+  // Validate the stored split: each bucket must be an integer 0..100. A split that does
+  // NOT total 100 is intentional and preserved — we do not force-normalize here. Only a
+  // missing/invalid split object falls back to the seeded 50/30/20 default.
+  const validPct = v => typeof v==='number' && isFinite(v) && Number.isInteger(v) && v>=0 && v<=100;
+  if(!p.split || typeof p.split!=='object'
+     || !validPct(p.split.needs) || !validPct(p.split.wants) || !validPct(p.split.savings)){
+    p.split = {needs:50, wants:30, savings:20};
+  }else{
+    p.split = {needs:p.split.needs, wants:p.split.wants, savings:p.split.savings};
+  }
+  return p;
+}
+
+function loadState(){
+  try{
+    const t = JSON.parse(localStorage.getItem('tally_txns')||'null');
+    transactions = (t && t.length) ? t : SAMPLE.slice();
+    overrides = JSON.parse(localStorage.getItem('tally_overrides')||'{}');
+  }catch(e){ transactions = SAMPLE.slice(); overrides = {}; }
+  try{ plan = JSON.parse(localStorage.getItem('tally_plan')||'null') || defaultPlan(); }
+  catch(e){ plan = defaultPlan(); }
+  plan = migratePlan(plan);
+  // Default landing month: latest transaction month, else today (so navigation always works).
+  selectedMonth = monthsAvailable()[0] || todayMonth();
+  // Default to the spending dashboard whenever there are transactions to show
+  // (the pre-budgeting default). Only a genuinely empty first run opens on Plan setup.
+  activeTab = (transactions.length || hasAnyIncome()) ? 'spending' : 'plan';
+}
+function saveState(){
+  localStorage.setItem('tally_txns', JSON.stringify(transactions));
+  localStorage.setItem('tally_overrides', JSON.stringify(overrides));
+  localStorage.setItem('tally_plan', JSON.stringify(plan));
+}
+
+/* ---------- Helpers ---------- */
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MON_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmt(n){ return '$' + n.toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function monthsAvailable(){
+  const set = new Set(transactions.map(t=>t.date.slice(0,7)));
+  return [...set].sort().reverse();
+}
+/* Months the switcher can reach: transaction months + months with income + the current month. */
+function navMonths(){
+  const set = new Set(transactions.map(t=>t.date.slice(0,7)));
+  Object.keys(plan.income).forEach(k=>{ if(/^\d{4}-\d{2}$/.test(k)) set.add(k); });
+  set.add(todayMonth());
+  return [...set].sort().reverse();
+}
+function monthLabel(ym){ const [y,m]=ym.split('-'); return MONTHS[+m-1] + ' ' + y; }
+function dateLabel(d){ const [y,m,day]=d.split('-'); return MON_SHORT[+m-1] + ' ' + (+day); }
+function prevMonthOf(ym){
+  let [y,m]=ym.split('-').map(Number); m--; if(m<1){m=12;y--;}
+  return y + '-' + String(m).padStart(2,'0');
+}
+/* Shift a 'YYYY-MM' by delta calendar months (handles year boundaries). */
+function shiftMonth(ym, delta){
+  let [y,m]=ym.split('-').map(Number);
+  const idx = (y*12 + (m-1)) + delta;
+  const ny = Math.floor(idx/12);
+  const nm = idx - ny*12; // 0..11
+  return ny + '-' + String(nm+1).padStart(2,'0');
+}
+/* Soft navigation bounds: floor = 24 months before the earliest of
+   {earliest transaction month, earliest planned-income month, today};
+   ceiling = 12 months after today. Today is always within bounds. */
+function navBounds(){
+  const today = todayMonth();
+  let earliest = today;
+  for(const t of transactions){ const m=t.date.slice(0,7); if(m<earliest) earliest=m; }
+  for(const k of Object.keys(plan.income)){ if(/^\d{4}-\d{2}$/.test(k) && k<earliest) earliest=k; }
+  return { floor: shiftMonth(earliest, -24), ceiling: shiftMonth(today, 12) };
+}
+function totalForMonth(ym){
+  return transactions.filter(t=>t.date.slice(0,7)===ym).reduce((s,t)=>s+t.amount,0);
+}
+function fmtK(n){return n>=1000?'$'+(n/1000).toFixed(1).replace(/\.0$/,'')+'k':'$'+Math.round(n);}
+function daysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}
+
+/* ---------- Plan helpers ---------- */
+function todayMonth(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+function hasAnyIncome(){ return Object.keys(plan.income).length > 0; }
+function incomeFor(ym){
+  if(plan.income[ym] != null) return plan.income[ym];
+  const keys = Object.keys(plan.income).filter(k=>k < ym).sort();
+  return keys.length ? plan.income[keys[keys.length-1]] : 0;
+}
+function incomeIsCarried(ym){ return plan.income[ym]==null && incomeFor(ym)>0; }
+function bucketOf(cat){ return plan.bucketMap[cat] || DEFAULT_BUCKET[cat] || 'wants'; }
+
+/* Scale a split proportionally toward a total of 100, then round to integers that sum
+   to exactly 100 (no negatives). Used by the "Even it out" button. A total of 0 falls
+   back to an even 34/33/33 so the result still sums to 100. */
+function normalizeSplit(s){
+  let n = Math.max(0, s.needs||0), w = Math.max(0, s.wants||0), sv = Math.max(0, s.savings||0);
+  const sum = n + w + sv;
+  if(sum>0){ const k = 100/sum; n*=k; w*=k; sv*=k; }
+  else { n=34; w=33; sv=33; }
+  n=Math.round(n); w=Math.round(w); sv=Math.round(sv);
+  let diff = 100 - (n + w + sv);
+  // park any rounding drift on the largest bucket so the three still total 100
+  const arr = [['needs',n],['wants',w],['savings',sv]].sort((a,b)=>b[1]-a[1]);
+  const top = arr[0][0];
+  if(top==='needs') n += diff; else if(top==='wants') w += diff; else sv += diff;
+  n=Math.max(0,n); w=Math.max(0,w); sv=Math.max(0,sv);
+  return {needs:n, wants:w, savings:sv};
+}
+
+/* Actuals + budgets for a month, summed into needs/wants by bucketOf(category). */
+function planFigures(ym){
+  const txns = transactions.filter(t=>t.date.slice(0,7)===ym)
+                           .map(t=>({...t, category:categorize(t.description)}));
+  let needsActual=0, wantsActual=0;
+  for(const t of txns){
+    if(bucketOf(t.category)==='needs') needsActual+=t.amount;
+    else wantsActual+=t.amount;
+  }
+  const income = incomeFor(ym);
+  const spent  = needsActual + wantsActual;
+  const savingsActual = income - spent;
+  const needsBudget  = income * plan.split.needs   / 100;
+  const wantsBudget  = income * plan.split.wants   / 100;
+  const savingsGoal  = income * plan.split.savings / 100;
+  return {income, needsActual, wantsActual, spent, savingsActual,
+          needsBudget, wantsBudget, savingsGoal};
+}
+
+/* ---------- Render ---------- */
+function render(){
+  renderMonthBar();
+  renderTabBar();
+  if(activeTab==='plan') renderPlan();
+  else renderSpending();
+}
+
+function renderTabBar(){
+  document.querySelectorAll('#tabBar .tab').forEach(btn=>{
+    const tab = btn.dataset.tab;
+    btn.classList.toggle('active', tab===activeTab);
+    btn.onclick=()=>{ activeTab=tab; render(); };
+  });
+}
+
+/* Import controls — rendered at the TOP of the Spending content (above the hero / empty
+   state) so importing is the first action a user sees. Handlers are (re)attached on
+   every render in wireSpendingExtras(); the file <input> itself is a persistent element
+   outside #content. Spending only — never on the Plan tab. */
+function importControlsHtml(){
+  return `<div class="card upload">
+    <button class="add-btn" id="addBtn">${icon('plus',18)}Add transactions</button>
+    <button class="help-toggle" id="helpToggle">How do I get my bank file?${icon('chevDown',14)}</button>
+    <div class="help" id="help">
+      <b>Wells Fargo</b>
+      <ul>
+        <li>Sign in, open the account</li>
+        <li>Find <b>Download Account Activity</b></li>
+        <li>Pick a date range, choose <b>Comma Delimited (.csv)</b>, download</li>
+      </ul>
+      <b>American Express</b>
+      <ul>
+        <li>Sign in, go to <b>Statements &amp; Activity</b></li>
+        <li>Click <b>Download</b>, choose <b>CSV / Excel</b></li>
+      </ul>
+      <p class="note">Then tap "Add transactions" and pick the file. You can add both banks and Tally combines them.</p>
+    </div>
+  </div>`;
+}
+
+/* Clear-transactions — rendered at the BOTTOM of the Spending content (below the txn
+   list), Spending only. Only shown when there is something to clear. Handler is
+   (re)attached on every render in wireSpendingExtras(). */
+function clearControlHtml(){
+  if(!transactions.length) return '';
+  return `<div class="card upload" style="padding-top:6px; padding-bottom:6px; margin-top:4px; box-shadow:none; background:none; border:none">
+    <button class="clear-txns" id="clearTxns" style="margin-top:0">${icon('trash',16)}Clear transactions</button>
+  </div>`;
+}
+
+function renderSpending(){
+  const content = document.getElementById('content');
+  const month = selectedMonth || todayMonth();
+  const monthHasTxns = transactions.some(t=>t.date.slice(0,7)===month);
+  if(!monthHasTxns){
+    // Free navigation can land on a month with no transactions — show a clean empty state
+    // instead of a $0 hero, an empty donut, an empty trend, and empty lists. The Add
+    // button still sits at the top so the user can import from here.
+    const hint = transactions.length
+      ? 'Use the arrows above to pick another month, or add a bank file.'
+      : 'Add a bank file to get started.';
+    content.innerHTML = importControlsHtml()
+      + `<div class="card empty"><div class="big">${icon('logo',40)}</div>
+        <div><b style="color:var(--ink-2)">No transactions in ${monthLabel(month)}</b><br>${hint}</div></div>`
+      + clearControlHtml();
+    currentTxns = [];
+    wireSpendingExtras();
+    return;
+  }
+  currentTxns = transactions
+    .filter(t=>t.date.slice(0,7)===selectedMonth)
+    .map((t,i)=>({...t, category:categorize(t.description)}))
+    .sort((a,b)=> a.date<b.date?1:-1);
+
+  const total = currentTxns.reduce((s,t)=>s+t.amount,0);
+  const byCat = {};
+  for(const t of currentTxns){ byCat[t.category]=(byCat[t.category]||0)+t.amount; }
+  const sorted = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+
+  const prev = prevMonthOf(selectedMonth);
+  const prevTotal = totalForMonth(prev);
+
+  const recurring = detectRecurring();
+
+  content.innerHTML = importControlsHtml()
+    + heroCard(total, prevTotal, prev)
+    + trendCard()
+    + (total>0 ? donutCard(sorted,total) + categoryCard(sorted,total) : '')
+    + (recurring.length ? recurringCard(recurring) : '')
+    + txnCard()
+    + clearControlHtml();
+  wireTxns();
+  wireSpendingExtras();
+}
+
+function renderMonthBar(){
+  // Free navigation: the arrows step one calendar month at a time within soft bounds,
+  // so any past/future month (including the current month) is reachable.
+  const anchor = selectedMonth || todayMonth();
+  const {floor, ceiling} = navBounds();
+  const atFloor = anchor <= floor;
+  const atCeiling = anchor >= ceiling;
+  const bar = document.getElementById('monthBar');
+  bar.innerHTML = `
+    <button id="prevM" ${atFloor?'disabled':''}>${icon('chevL')}</button>
+    <span class="label num">${monthLabel(anchor)}</span>
+    <button id="nextM" ${atCeiling?'disabled':''}>${icon('chevR')}</button>`;
+  document.getElementById('prevM').onclick=()=>{ if(!atFloor){ selectedMonth=shiftMonth(anchor,-1); render(); } };
+  document.getElementById('nextM').onclick=()=>{ if(!atCeiling){ selectedMonth=shiftMonth(anchor,1); render(); } };
+}
+
+function heroCard(total, prevTotal, prev){
+  let compare = '';
+  if(prevTotal>0){
+    const diff = total - prevTotal;
+    const cls = Math.abs(diff)<0.5 ? 'flat' : (diff>0?'up':'down');
+    const ic = cls==='flat' ? icon('dot',14) : (diff>0?icon('caretUp',14):icon('caretDown',14));
+    const word = diff>0?' more than ':' less than ';
+    compare = `<div class="compare t-meta ${cls}">${ic}<span class="num">${fmt(Math.abs(diff))}</span>${word}${MONTHS[+prev.split('-')[1]-1]}</div>`;
+  }
+
+  // Safe-to-spend (only when income exists for this month)
+  let safeBlock = '';
+  const inc = incomeFor(selectedMonth);
+  if(inc>0){
+    const savingsTarget = inc * plan.split.savings / 100;
+    const safe = inc - total - savingsTarget;
+    const safeColor = safe>=0 ? 'var(--ink)' : 'var(--bad)';
+    let daily = '';
+    if(safe>0 && selectedMonth===todayMonth()){
+      const daysLeft = daysInMonth(selectedMonth) - new Date().getDate() + 1;
+      const perDay = safe / daysLeft;
+      daily = `<div class="t-meta safe-sub">${fmt(perDay)}/day for the next ${daysLeft} day${daysLeft!==1?'s':''}</div>`;
+    }
+    safeBlock = `<div class="divider"></div>
+      <div class="safe-block">
+        <div class="safe-row">
+          <span class="t-label">Safe to spend</span>
+          <span class="t-h2 num" style="color:${safeColor}">${fmt(safe)}</span>
+        </div>
+        <div class="t-meta safe-sub"><span class="num">${fmt(inc)}</span> in &middot; <span class="num">${fmt(total)}</span> spent &middot; <span class="num">${fmt(savingsTarget)}</span> to save</div>
+        ${daily}
+      </div>`;
+  }
+
+  return `<div class="card hero">
+    <div class="cap t-cap">Spent in ${monthLabel(selectedMonth)}</div>
+    <div class="big t-hero num">${fmt(total)}</div>
+    ${compare}
+    ${safeBlock}
+  </div>`;
+}
+
+/* ---------- Trend chart ---------- */
+function trendCard(){
+  // up-to-6 months ending at selectedMonth, chronological L->R
+  let pool = monthsAvailable().filter(m=>m<=selectedMonth); // desc
+  if(!pool.includes(selectedMonth)) pool.unshift(selectedMonth);
+  const months = pool.slice(0,6).sort(); // asc, chronological
+  // A single bar is not a trend — only render when there's something to compare against.
+  if(months.length<2) return '';
+  const values = months.map(m=>totalForMonth(m));
+  const max = Math.max(...values, 1);
+  const W=300, H=96, maxBar=64, bw=26, base=78;
+  const step = months.length>1 ? (W-bw) / (months.length-1) : 0;
+  let bars='';
+  months.forEach((ym,i)=>{
+    const v = values[i];
+    const h = Math.max(2, (v/max)*maxBar);
+    const x = months.length>1 ? i*step : (W-bw)/2;
+    const y = base - h;
+    const isSel = ym===selectedMonth;
+    const fill = isSel ? 'var(--accent)' : 'var(--line-strong)';
+    const lbl = MON_SHORT[+ym.split('-')[1]-1];
+    const valTop = isSel ? `<text class="tval num" x="${x+bw/2}" y="${y-4}" text-anchor="middle">${fmtK(v)}</text>` : '';
+    const barLabel = `${MONTHS[+ym.split('-')[1]-1]} ${ym.split('-')[0]}, ${fmtK(v)}`;
+    bars += `<g data-ym="${ym}" role="button" tabindex="0" aria-label="${barLabel}" style="cursor:pointer">
+      <rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="3" fill="${fill}"/>
+      <text class="tlabel" x="${x+bw/2}" y="${H-4}" text-anchor="middle">${lbl}</text>
+      ${valTop}
+    </g>`;
+  });
+  return `<div class="sec-title">Spending trend</div>
+    <div class="card trend">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${bars}</svg>
+    </div>`;
+}
+
+function donutCard(sorted,total){
+  const r=70, C=2*Math.PI*r, cx=90, cy=90, sw=20;
+  let offset=0, circles='';
+  for(const [cat,amt] of sorted){
+    const len = (amt/total)*C;
+    circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+      stroke="${CATEGORIES[cat].color}" stroke-width="${sw}"
+      stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}"
+      stroke-dashoffset="${(-offset).toFixed(2)}"
+      transform="rotate(-90 ${cx} ${cy})" stroke-linecap="butt"/>`;
+    offset += len;
+  }
+  return `<div class="card donut-wrap">
+    <svg viewBox="0 0 180 180" width="180" height="180">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line-soft)" stroke-width="${sw}"/>
+      ${circles}
+      <g class="donut-center" text-anchor="middle">
+        <text class="amt" x="90" y="88">${fmt(total)}</text>
+        <text class="lbl" x="90" y="106">TOTAL</text>
+      </g>
+    </svg>
+  </div>`;
+}
+
+function categoryCard(sorted,total){
+  const rows = sorted.map(([cat,amt])=>{
+    const c=CATEGORIES[cat], pct=Math.round(amt/total*100);
+    return `<div class="cat-row">
+      <span class="ic-wrap">${icon(cat)}</span>
+      <div class="cat-mid">
+        <div class="cat-name"><span class="nm">${c.label}</span><span class="pct num">${pct}%</span></div>
+        <div class="cat-bar"><span style="width:${Math.max(pct,2)}%; background:${c.color}"></span></div>
+      </div>
+      <span class="cat-amt num">${fmt(amt)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="sec-title">By category</div><div class="card">${rows}</div>`;
+}
+
+/* ---------- Recurring detection ----------
+   A real subscription/bill charges very nearly the SAME amount in repeated months
+   (Netflix $15.49, Planet Fitness $24.99, AT&T $70.00). Variable discretionary spend
+   (groceries, gas, shopping) drifts month to month, so we cluster a merchant's charges
+   by near-identical amount and only flag a cluster that recurs across 2+ recent months.
+   Recurring-by-nature categories (subscriptions/bills) get a slightly looser band. */
+function consecutive(monthsAsc){
+  for(let i=1;i<monthsAsc.length;i++){
+    if(prevMonthOf(monthsAsc[i]) !== monthsAsc[i-1]) return false;
+  }
+  return monthsAsc.length>=2;
+}
+function detectRecurring(){
+  const groups = {};
+  for(const t of transactions){ const k=normMerchant(t.description); (groups[k]||(groups[k]=[])).push(t); }
+  const recent = monthsAvailable().slice(0,3);
+  const recentSet = new Set(recent);
+  const out=[];
+  for(const k in groups){
+    const list = groups[k];
+    if(new Set(list.map(t=>t.date.slice(0,7))).size < 2) continue;
+    const cat = categorize(list[0].description);
+    const recurringByNature = cat==='subscriptions' || cat==='bills';
+    // Band for "same amount": tight for discretionary, a touch looser for known recurring.
+    const bandFor = a => Math.max(a * (recurringByNature?0.04:0.02), recurringByNature?2:1) + 0.01;
+
+    // Find the largest cluster of near-identical amounts that spans >=2 recent months.
+    let best = null;
+    const sorted = list.slice().sort((a,b)=>a.amount-b.amount);
+    for(const anchor of sorted){
+      const band = bandFor(anchor.amount);
+      const cluster = list.filter(t=>Math.abs(t.amount-anchor.amount)<=band && recentSet.has(t.date.slice(0,7)));
+      const cMonths = new Set(cluster.map(t=>t.date.slice(0,7)));
+      if(cMonths.size < 2) continue;
+      if(!best || cMonths.size > best.months || (cMonths.size===best.months && cluster.length>best.count)){
+        const amts = cluster.map(t=>t.amount).sort((a,b)=>a-b);
+        best = {amount:amts[Math.floor(amts.length/2)], months:cMonths.size,
+                count:cluster.length, monthList:[...cMonths].sort()};
+      }
+    }
+    if(!best) continue;
+    const name = list.slice().sort((a,b)=>a.date<b.date?1:-1)[0].description;
+    out.push({key:k, name, cat, amount:best.amount, months:best.months,
+              monthly: consecutive(best.monthList)});
+  }
+  // Surface by regularity first (more months = more confident), then amount —
+  // so true subscriptions are never dropped by an amount-only top cut.
+  return out.sort((a,b)=> (b.months-a.months) || (b.amount-a.amount)).slice(0,6);
+}
+
+function recurringCard(list){
+  const monthly = list.reduce((s,r)=>s+r.amount,0);
+  const rows = list.map(r=>`
+    <div class="cat-row">
+      <span class="ic-wrap">${icon(r.cat)}</span>
+      <div class="cat-mid">
+        <div class="txn-desc">${escapeHtml(r.name)}</div>
+        <div class="t-meta">${r.monthly?'Monthly':'Recurring'} &middot; ${CATEGORIES[r.cat].label}</div>
+      </div>
+      <span class="cat-amt num">${fmt(r.amount)}</span>
+    </div>`).join('');
+  return `<div class="card">
+    <div class="recur-head" id="recurHead" role="button" tabindex="0" aria-expanded="false"
+      aria-label="Recurring charges, ${fmt(monthly)} per month — show details">
+      <span class="ic-wrap">${icon('recurring')}</span>
+      <span class="rt t-cap">Recurring</span>
+      <span class="t-amt num">${fmt(monthly)}/mo</span>
+      <span class="ic-wrap chev" style="color:var(--ink-2)">${icon('chevDown')}</span>
+    </div>
+    <div class="recur-list" id="recurList">${rows}</div>
+  </div>`;
+}
+
+function txnCard(){
+  const rows = currentTxns.map((t,i)=>{
+    const c=CATEGORIES[t.category];
+    const chips = CAT_ORDER.map(k=>`<button class="chip ${k===t.category?'active':''}" data-i="${i}" data-cat="${k}">${icon(k,16)}${CATEGORIES[k].label}</button>`).join('');
+    return `<div class="txn">
+      <div class="txn-main" data-i="${i}" role="button" tabindex="0" aria-expanded="false"
+        aria-label="${escapeHtml(t.description)}, ${fmt(t.amount)}, ${c.label} — change category">
+        <span class="ic-wrap">${icon(t.category)}</span>
+        <div class="txn-info">
+          <div class="txn-desc">${escapeHtml(t.description)}</div>
+          <div class="txn-meta">${dateLabel(t.date)} &middot; ${c.label}</div>
+        </div>
+        <span class="txn-amt num">${fmt(t.amount)}</span>
+      </div>
+      <div class="picker">${chips}</div>
+    </div>`;
+  }).join('');
+  return `<div class="sec-title">${currentTxns.length} transactions</div><div class="card">${rows}</div>`;
+}
+
+function wireTxns(){
+  document.querySelectorAll('.txn-main').forEach(el=>{
+    const toggle=()=>{
+      const open = el.parentElement.querySelector('.picker').classList.toggle('show');
+      el.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    el.onclick=toggle;
+    el.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } };
+  });
+  document.querySelectorAll('.chip[data-i]').forEach(el=>{
+    el.onclick=(e)=>{
+      e.stopPropagation();
+      const t = currentTxns[+el.dataset.i];
+      overrides[normMerchant(t.description)] = el.dataset.cat;
+      saveState();
+      toast("Saved — we'll remember that", true);
+      render();
+    };
+  });
+}
+
+function wireSpendingExtras(){
+  // Import controls live inside the re-rendered Spending content, so their handlers
+  // must be re-attached on every render (the elements are fresh each time).
+  const addBtn = document.getElementById('addBtn');
+  if(addBtn) addBtn.onclick = ()=>document.getElementById('fileInput').click();
+  const helpToggle = document.getElementById('helpToggle');
+  if(helpToggle) helpToggle.onclick = ()=>{
+    document.getElementById('help').classList.toggle('show');
+    const chev = helpToggle.querySelector('.ic');
+    if(chev) chev.classList.toggle('open');
+  };
+  const clearBtn = document.getElementById('clearTxns');
+  if(clearBtn) clearBtn.onclick = clearTransactions;
+
+  // trend bars -> jump to month
+  document.querySelectorAll('[data-ym]').forEach(g=>{
+    const jump=()=>{
+      const ym = g.dataset.ym;
+      if(navMonths().includes(ym)){ selectedMonth=ym; render(); }
+    };
+    g.onclick=jump;
+    g.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); jump(); } };
+  });
+  // recurring toggle
+  const head = document.getElementById('recurHead');
+  if(head){
+    const toggle=()=>{
+      const open = document.getElementById('recurList').classList.toggle('show');
+      head.querySelector('.chev').classList.toggle('open');
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    head.onclick=toggle;
+    head.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } };
+  }
+}
+
+// Clear ONLY imported transactions — preserve the plan (tally_plan) and learned
+// category overrides (tally_overrides). Spending tab only, bottom of the content.
+function clearTransactions(){
+  if(!confirm('This removes your imported transactions. Your plan and saved categories are kept. Continue?')) return;
+  transactions=[]; saveState();
+  selectedMonth=monthsAvailable()[0] || todayMonth();
+  render(); toast('Transactions cleared');
+}
+
+function escapeHtml(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- Plan tab ---------- */
+function renderPlan(){
+  const month = selectedMonth || todayMonth();
+  if(incomeFor(month) <= 0){ renderSetup(month); return; }
+  renderDashboard(month);
+}
+
+function renderSetup(month){
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="card hero">
+      <div class="cap t-cap">Set up your plan</div>
+      <div class="t-h2" style="margin:10px 0 4px">How much do you take home each month?</div>
+      <div class="t-meta" style="margin-bottom:18px">This is your take-home pay, what actually lands in your account.</div>
+      <div style="display:flex; align-items:center; justify-content:center; gap:2px; margin-bottom:18px">
+        <span class="num" style="font-size:34px; font-weight:700; letter-spacing:-.025em; color:var(--muted)">$</span>
+        <input id="setupIncome" class="plan-income-input num" type="number" inputmode="decimal" placeholder="0" style="width:auto; max-width:220px" />
+      </div>
+      <div class="card" style="box-shadow:none; margin:0 0 14px; padding:6px 14px; text-align:left">
+        <div class="cat-row"><span class="ic-wrap">${icon('home')}</span><div class="cat-mid"><div class="cat-name"><span class="nm">Needs <span class="pct num">${plan.split.needs}%</span></span></div></div><span class="cat-amt num" id="prevNeeds">$0.00</span></div>
+        <div class="cat-row"><span class="ic-wrap">${icon('sparkle')}</span><div class="cat-mid"><div class="cat-name"><span class="nm">Wants <span class="pct num">${plan.split.wants}%</span></span></div></div><span class="cat-amt num" id="prevWants">$0.00</span></div>
+        <div class="cat-row"><span class="ic-wrap">${icon('coins')}</span><div class="cat-mid"><div class="cat-name"><span class="nm">Savings <span class="pct num">${plan.split.savings}%</span></span></div></div><span class="cat-amt num" id="prevSavings">$0.00</span></div>
+      </div>
+      <div class="t-meta" style="margin-bottom:16px; text-align:left">Split ${plan.split.needs}/${plan.split.wants}/${plan.split.savings} &mdash; needs, wants, savings. Change it anytime.</div>
+      <button class="add-btn" id="setupSave" disabled style="opacity:.5">Looks good</button>
+    </div>`;
+  const input = document.getElementById('setupIncome');
+  const saveBtn = document.getElementById('setupSave');
+  const update = ()=>{
+    const v = parseFloat(input.value) || 0;
+    document.getElementById('prevNeeds').textContent   = fmt(v*plan.split.needs/100);
+    document.getElementById('prevWants').textContent   = fmt(v*plan.split.wants/100);
+    document.getElementById('prevSavings').textContent = fmt(v*plan.split.savings/100);
+    saveBtn.disabled = !(v>0);
+    saveBtn.style.opacity = v>0 ? '1' : '.5';
+  };
+  input.oninput = update;
+  saveBtn.onclick = ()=>{
+    const v = parseFloat(input.value) || 0;
+    if(v<=0) return;
+    plan.income[month] = +v;
+    saveState();
+    toast('Plan saved');
+    renderPlan();
+  };
+  input.focus();
+}
+
+function bucketBarColor(under){ return under ? 'var(--good)' : 'var(--bad)'; }
+
+/* Hero + buckets — recomputed from plan.split on every target edit so the headline
+   safe-to-spend number and each bucket's budget/remaining update live. */
+function dashboardTopHtml(f, month){
+  // 7a. Safe-to-spend hero
+  const safe = f.income - f.spent - f.savingsGoal;
+  const safeColor = safe>=0 ? 'var(--ink)' : 'var(--bad)';
+  const summary = `<span class="num">${fmt(f.income)}</span> in &middot; <span class="num">${fmt(f.spent)}</span> spent &middot; <span class="num">${fmt(f.savingsGoal)}</span> to save`;
+  let daily = '';
+  if(safe>0 && month===todayMonth()){
+    const daysLeft = daysInMonth(month) - new Date().getDate() + 1;
+    const perDay = safe / daysLeft;
+    daily = `<div class="t-meta" style="margin-top:4px">${fmt(perDay)}/day for the next ${daysLeft} day${daysLeft!==1?'s':''}</div>`;
+  }
+  const heroHtml = `<div class="card hero">
+    <div class="cap t-cap">Safe to spend</div>
+    <div class="big t-hero num" style="color:${safeColor}">${fmt(safe)}</div>
+    <div class="compare t-meta" style="color:var(--muted)">${summary}</div>
+    ${daily}
+  </div>`;
+
+  // 7b. buckets
+  const needsRem = f.needsBudget - f.needsActual;
+  const wantsRem = f.wantsBudget - f.wantsActual;
+  const needsRow = bucketRow(icon('home'),'Needs','needs', f.needsActual, f.needsBudget, needsRem);
+  const wantsRow = bucketRow(icon('sparkle'),'Wants','wants', f.wantsActual, f.wantsBudget, wantsRem);
+  const overNeeds = f.needsActual > f.needsBudget;
+  const overWants = f.wantsActual > f.wantsBudget;
+  const savingsRow = savingsBucketRow(f.savingsActual, f.savingsGoal, overNeeds, overWants);
+  const bucketsHtml = `<div class="sec-title">Where it's going</div>
+    <div class="card">${needsRow}${wantsRow}${savingsRow}</div>`;
+
+  return heroHtml + bucketsHtml;
+}
+
+function renderDashboard(month){
+  const f = planFigures(month);
+  const content = document.getElementById('content');
+
+  // 7c. your plan (income + split sliders)
+  const carried = incomeIsCarried(month);
+  const incomeNumColor = carried ? 'var(--muted)' : 'var(--ink)';
+  const carriedNote = carried ? `<div class="t-meta" style="margin-top:2px">from last month, tap to confirm</div>` : '';
+  const planHtml = `<div class="sec-title">Your plan</div>
+    <div class="card">
+      <div class="t-label" style="margin-bottom:4px">Take-home pay</div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <span id="incomeDisplay" class="t-h2 num" role="button" tabindex="0" aria-label="Take-home pay ${fmt(f.income)} — edit" style="color:${incomeNumColor}; cursor:pointer">${fmt(f.income)}</span>
+        <button class="icon-btn" id="editIncomeBtn" aria-label="Edit income">${icon('pencil',16)}</button>
+      </div>
+      ${carriedNote}
+      <div class="divider"></div>
+      ${splitEditorHtml(f)}
+    </div>`;
+
+  content.innerHTML = `<div id="planTop">${dashboardTopHtml(f, month)}</div>` + planHtml;
+  wirePlan(month);
+}
+
+function bucketRow(iconHtml, name, bucket, actual, budget, remaining){
+  const under = remaining >= 0;
+  const fill = budget>0 ? Math.min(actual/budget,1)*100 : (actual>0?100:0);
+  const color = bucketBarColor(under);
+  const status = under ? fmt(remaining)+' left' : fmt(-remaining)+' over';
+  const cats = CAT_ORDER.filter(c=>bucketOf(c)===bucket);
+  const catRows = cats.map(c=>{
+    const cur = bucketOf(c);
+    return `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0">
+      <span style="font-size:13px; display:inline-flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"><span class="ic-wrap" style="width:20px; height:20px">${icon(c,16)}</span>${CATEGORIES[c].label}</span>
+      <span style="display:flex; gap:8px; flex:none">
+        <button class="chip ${cur==='needs'?'active':''}" data-move="${c}" data-bucket="needs">Needs</button>
+        <button class="chip ${cur==='wants'?'active':''}" data-move="${c}" data-bucket="wants">Wants</button>
+      </span>
+    </div>`;
+  }).join('');
+  return `<div class="cat-row">
+    <span class="ic-wrap">${iconHtml}</span>
+    <div class="cat-mid">
+      <div class="cat-name"><span class="nm">${name}</span><span class="pct num">${fmt(actual)} of ${fmt(budget)}</span></div>
+      <div class="cat-bar"><span style="width:${fill}%; background:${color}"></span></div>
+      <div class="t-meta" style="color:${under?'var(--muted)':'var(--bad)'}">${status}</div>
+      <button class="help-toggle" data-expand="${bucket}" style="margin-top:8px">See what's in here ${icon('chevDown',14)}</button>
+      <div class="help" id="bucketHelp-${bucket}">${catRows||'<span class="t-meta">Nothing here yet.</span>'}</div>
+    </div>
+  </div>`;
+}
+
+function savingsBucketRow(saved, goal, overNeeds, overWants){
+  const fill = goal>0 ? Math.max(0,Math.min(saved/goal,1))*100 : (saved>0?100:0);
+  const color = saved<0 ? 'var(--bad)' : (saved>=goal ? 'var(--good)' : 'var(--accent)');
+  let status, statusColor='var(--muted)';
+  if(saved < 0){ status = 'you went over, nothing left to save'; statusColor='var(--bad)'; }
+  else if(saved >= goal){
+    const overWhere = overNeeds && overWants ? 'Needs and Wants'
+                    : overNeeds ? 'Needs' : overWants ? 'Wants' : '';
+    status = overWhere ? `On track, but you were over on ${overWhere}` : 'On track';
+  }
+  else { status = fmt(goal-saved)+' short of your goal'; }
+  return `<div class="cat-row">
+    <span class="ic-wrap">${icon('coins')}</span>
+    <div class="cat-mid">
+      <div class="cat-name"><span class="nm">Savings</span><span class="pct num">${fmt(saved)} of ${fmt(goal)} goal</span></div>
+      <div class="cat-bar"><span style="width:${fill}%; background:${color}"></span></div>
+      <div class="t-meta" style="color:${statusColor}">${status}</div>
+    </div>
+  </div>`;
+}
+
+function splitEditorHtml(f){
+  const sliderRow = (key, name)=>{
+    const pct = plan.split[key];
+    const dollars = f.income * pct / 100;
+    return `<div class="slider-row">
+      <div class="slider-head">
+        <span class="sl-name">${name}</span>
+        <span class="sl-vals">
+          <input class="sl-pct-input num" id="splitPct-${key}" type="number" inputmode="numeric" min="0" max="100" value="${pct}" data-split="${key}" />
+          <span class="num" style="font-size:12px; font-weight:600; color:var(--ink-2)">%</span>
+          <span class="sl-dollar num" id="splitDollar-${key}">${f.income>0?fmt(dollars):'&mdash;'}</span>
+        </span>
+      </div>
+      <input class="split" type="range" min="0" max="100" value="${pct}" data-split="${key}" style="--fill:${pct}%" />
+    </div>`;
+  };
+  return `
+    ${sliderRow('needs','Needs')}
+    ${sliderRow('wants','Wants')}
+    ${sliderRow('savings','Savings')}
+    <div class="split-total" id="splitStatus"></div>
+    <div class="split-actions">
+      <button class="split-even" id="splitEven">${icon('check',14)} Even it out to 100%</button>
+      <button class="split-reset" id="splitReset">${icon('reset',14)} Reset to 50/30/20</button>
+    </div>`;
+}
+
+function wirePlan(month){
+  // edit income (tap number or pencil)
+  const editIncome = ()=>startEditIncome(month);
+  const incEl = document.getElementById('incomeDisplay');
+  const editBtn = document.getElementById('editIncomeBtn');
+  if(incEl){
+    incEl.onclick = editIncome;
+    incEl.onkeydown = (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); editIncome(); } };
+  }
+  if(editBtn) editBtn.onclick = editIncome;
+
+  wirePlanTop();
+  wireSplitSliders(month);
+}
+
+/* Wire the bucket expanders + move-category chips inside #planTop. Called on first
+   render and again whenever #planTop is live-rebuilt by a target edit. */
+function wirePlanTop(){
+  document.querySelectorAll('[data-expand]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const panel = document.getElementById('bucketHelp-'+btn.dataset.expand);
+      if(panel) panel.classList.toggle('show');
+      const chev = btn.querySelector('.ic');
+      if(chev) chev.classList.toggle('open');
+    };
+  });
+  document.querySelectorAll('[data-move]').forEach(btn=>{
+    btn.onclick = ()=>moveCategory(btn.dataset.move, btn.dataset.bucket);
+  });
+}
+
+function wireSplitSliders(month){
+  if(!document.getElementById('splitReset')) return;
+  const income = incomeFor(month);
+
+  // Live refresh from plan.split (no full re-render): repaint the slider visuals + dollar
+  // labels in the editor AND rebuild the hero + bucket budgets so the headline safe-to-spend
+  // and each bucket's budget/remaining track the new targets immediately.
+  const refresh = ()=>{
+    ['needs','wants','savings'].forEach(key=>{
+      const pct = plan.split[key];
+      const range = document.querySelector('input.split[data-split="'+key+'"]');
+      const pctInput = document.getElementById('splitPct-'+key);
+      const dollar = document.getElementById('splitDollar-'+key);
+      if(range){ range.value = pct; range.style.setProperty('--fill', pct+'%'); }
+      if(pctInput && document.activeElement!==pctInput) pctInput.value = pct;
+      if(dollar) dollar.innerHTML = income>0 ? fmt(income*pct/100) : '&mdash;';
+    });
+    // Running total + plain-language status. The three buckets are set independently,
+    // so the total can be under, exactly, or over 100.
+    const total = plan.split.needs + plan.split.wants + plan.split.savings;
+    const status = document.getElementById('splitStatus');
+    if(status){
+      if(total===100){
+        status.style.color = 'var(--good)';
+        status.innerHTML = `${icon('check',14)}<span><span class="num">100%</span> &mdash; adds up</span>`;
+      }else if(total>100){
+        status.style.color = 'var(--bad)';
+        status.innerHTML = `<span><span class="num">${total}%</span> &mdash; <span class="num">${total-100}%</span> over your income</span>`;
+      }else{
+        status.style.color = 'var(--bad)';
+        status.innerHTML = `<span><span class="num">${total}%</span> &mdash; <span class="num">${100-total}%</span> not assigned yet</span>`;
+      }
+    }
+    // "Even it out" is only meaningful when the total isn't already 100.
+    const even = document.getElementById('splitEven');
+    if(even) even.style.display = total===100 ? 'none' : 'inline-flex';
+    const top = document.getElementById('planTop');
+    if(top){ top.innerHTML = dashboardTopHtml(planFigures(month), month); wirePlanTop(); }
+  };
+
+  document.querySelectorAll('input.split[data-split]').forEach(range=>{
+    range.oninput = ()=>{
+      const key = range.dataset.split;
+      setSplit(key, +range.value);
+      refresh();
+    };
+  });
+
+  document.querySelectorAll('.sl-pct-input[data-split]').forEach(input=>{
+    const commit = ()=>{
+      const key = input.dataset.split;
+      let v = parseInt(input.value, 10);
+      if(isNaN(v)) v = plan.split[key];
+      setSplit(key, v);
+      refresh();
+    };
+    input.onchange = commit;
+    input.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); input.blur(); } };
+    input.onblur = commit;
+  });
+
+  const even = document.getElementById('splitEven');
+  if(even) even.onclick = ()=>{
+    plan.split = normalizeSplit(plan.split);
+    saveState();
+    renderPlan();
+  };
+
+  const reset = document.getElementById('splitReset');
+  if(reset) reset.onclick = ()=>{
+    plan.split = {needs:50, wants:30, savings:20};
+    saveState();
+    renderPlan();
+  };
+
+  refresh();
+}
+
+/* Set ONLY this bucket's percent (integer, clamped 0..100). The other two buckets are
+   left exactly as they were — the total may now be under or over 100, which is fine and
+   is shown by the live indicator. Persisted immediately. */
+function setSplit(bucket, value){
+  let p = Math.round(value);
+  if(isNaN(p)) p = plan.split[bucket];
+  p = Math.max(0, Math.min(100, p));
+  plan.split[bucket] = p;
+  saveState();
+}
+
+function moveCategory(cat, bucket){
+  if(DEFAULT_BUCKET[cat]===bucket) delete plan.bucketMap[cat];
+  else plan.bucketMap[cat] = bucket;
+  saveState();
+  renderPlan();
+  toast('Moved to ' + (bucket==='needs'?'Needs':'Wants'));
+}
+
+function startEditIncome(month){
+  const span = document.getElementById('incomeDisplay');
+  if(!span) return;
+  const cur = incomeFor(month);
+  const wrap = document.createElement('span');
+  wrap.innerHTML = `$<input class="income-edit num" id="incomeEdit" type="number" inputmode="decimal" value="${cur||''}" />`;
+  span.replaceWith(wrap);
+  const input = document.getElementById('incomeEdit');
+  input.focus();
+  input.select();
+  const commit = ()=>{
+    const v = parseFloat(input.value);
+    if(isNaN(v) || v<=0){ renderPlan(); return; } // cancel: keep prior value
+    plan.income[month] = +v;
+    saveState();
+    toast('Saved');
+    renderPlan();
+  };
+  input.onblur = commit;
+  input.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); input.blur(); } if(e.key==='Escape'){ renderPlan(); } };
+}
+
+/* ---------- CSV import ---------- */
+function parseCSV(text){
+  text = text.replace(/^﻿/,'').replace(/\r\n?/g,'\n'); // strip BOM, normalize line endings
+  const rows=[]; let row=[], field='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; }
+      else field+=c;
+    }else{
+      if(c==='"') q=true;
+      else if(c===',') { row.push(field); field=''; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if(c==='\r'){}
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c.trim()!==''));
+}
+function normalizeDate(s){
+  if(!s) return null; s=s.trim();
+  let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(m){ let yy=m[3]; if(yy.length===2) yy='20'+yy; return `${yy}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`; }
+  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  return null;
+}
+function rowsToTransactions(rows){
+  if(!rows.length) return [];
+  const head = rows[0].map(s=>s.trim().toLowerCase());
+  const hasHeader = head.some(h=>h.includes('date')) && head.some(h=>h.includes('amount')||h.includes('description'));
+  const out=[];
+  if(hasHeader){
+    const di=head.findIndex(h=>h.includes('date'));
+    const ai=head.findIndex(h=>h.includes('amount'));
+    const ni=head.findIndex(h=>h.includes('description')||h.includes('payee')||h.includes('detail')||h.includes('merchant'));
+    for(let r=1;r<rows.length;r++){
+      const cells=rows[r]; if(cells.length<2) continue;
+      const date=normalizeDate(cells[di]);
+      const amt=parseFloat((cells[ai]||'').replace(/[^0-9.\-]/g,''));
+      const desc=(cells[ni]||'').trim();
+      if(!date||isNaN(amt)||!desc) continue;
+      // Amex / header style: a positive amount is a charge (money spent)
+      if(amt>0) out.push({date, description:desc, amount:+amt.toFixed(2)});
+    }
+  }else{
+    // Wells Fargo style: no header. col0=date, col1=amount(neg=spend), last col=description
+    for(const cells of rows){
+      if(cells.length<2) continue;
+      const date=normalizeDate(cells[0]);
+      const amt=parseFloat((cells[1]||'').replace(/[^0-9.\-]/g,''));
+      const desc=(cells[cells.length-1]||'').trim();
+      if(!date||isNaN(amt)||!desc) continue;
+      if(amt<0) out.push({date, description:desc, amount:+Math.abs(amt).toFixed(2)});
+    }
+  }
+  return out;
+}
+function dedupe(list){
+  const seen=new Set(), out=[];
+  for(const t of list){
+    const k=t.date+'|'+t.description+'|'+t.amount;
+    if(!seen.has(k)){ seen.add(k); out.push(t); }
+  }
+  return out;
+}
+
+/* ---------- UI wiring ---------- */
+// The file <input> is a persistent element (outside #content), so its change handler is
+// wired once here. The Add button that triggers it is rendered inside the Spending
+// content and re-wired on every render in wireSpendingExtras().
+const fileInput=document.getElementById('fileInput');
+fileInput.onchange=e=>{
+  const files=[...e.target.files]; if(!files.length) return;
+  let pending=files.length, added=[], rowsSeen=0;
+  files.forEach(f=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{ const rows=parseCSV(ev.target.result); rowsSeen+=rows.length; added.push(...rowsToTransactions(rows)); }
+      catch(err){ console.error(err); }
+      if(--pending===0){
+        if(!added.length){
+          toast(rowsSeen>1 ? `Read ${rowsSeen} rows but found no purchases — is it the right file?` : "Couldn't read that file");
+          fileInput.value=''; return;
+        }
+        transactions=dedupe(transactions.concat(added));
+        saveState();
+        selectedMonth=monthsAvailable()[0];
+        render();
+        toast(`Added ${added.length} transaction${added.length>1?'s':''}`, true);
+        fileInput.value='';
+      }
+    };
+    reader.readAsText(f);
+  });
+};
+
+// menu sheet
+const backdrop=document.getElementById('backdrop'), sheet=document.getElementById('sheet');
+function openSheet(){ backdrop.classList.add('show'); sheet.classList.add('show'); }
+function closeSheet(){ backdrop.classList.remove('show'); sheet.classList.remove('show'); }
+document.getElementById('menuBtn').onclick=openSheet;
+backdrop.onclick=closeSheet;
+document.getElementById('loadSample').onclick=()=>{
+  transactions=SAMPLE.slice(); overrides={}; saveState();
+  selectedMonth=monthsAvailable()[0]; render(); closeSheet(); toast('Sample data loaded');
+};
+document.getElementById('resetPlan').onclick=()=>{
+  closeSheet();
+  if(!confirm('This clears all your income and your whole budget — needs, wants, savings, everything. Continue?')) return;
+  plan=defaultPlan(); saveState(); activeTab='plan'; render(); toast('Plan reset');
+};
+document.getElementById('clearAll').onclick=()=>{
+  transactions=[]; overrides={}; plan=defaultPlan(); saveState();
+  selectedMonth=null; render(); closeSheet(); toast('Cleared');
+};
+
+// toast
+let toastTimer;
+function toast(msg, success){
+  const el=document.getElementById('toast');
+  el.innerHTML = (success?icon('check',16):'') + `<span>${escapeHtml(msg)}</span>`;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+/* ---------- Static icons / copy ----------
+   The Add/help/clear controls are built (icons included) inside their HTML builders
+   in renderSpending, so they are NOT assigned here. */
+document.getElementById('brandLogo').innerHTML = icon('logo',22);
+document.getElementById('menuBtn').innerHTML = icon('menu');
+document.getElementById('loadSample').innerHTML = icon('reset') + 'Load sample data';
+document.getElementById('resetPlan').innerHTML = icon('reset') + 'Reset plan';
+document.getElementById('clearAll').innerHTML = icon('trash') + 'Clear everything';
+
+/* ---------- Go ---------- */
+loadState();
+render();
+</script>
+</body>
+</html>
