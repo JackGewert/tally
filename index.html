@@ -515,6 +515,10 @@ function saveState(){
   localStorage.setItem('tally_txns', JSON.stringify(transactions));
   localStorage.setItem('tally_overrides', JSON.stringify(overrides));
   localStorage.setItem('tally_plan', JSON.stringify(plan));
+  // Cloud write-through seam (installed by the optional Supabase module). localStorage is
+  // written first and synchronously above; this is fire-and-forget and a no-op when cloud
+  // mode is off, so the local-only app behaves exactly as before.
+  if(window.__cloudPush) window.__cloudPush();
 }
 
 /* ---------- Helpers ---------- */
@@ -996,6 +1000,9 @@ function wireSpendingExtras(){
 function clearTransactions(){
   if(!confirm('This removes your imported transactions. Your plan and saved categories are kept. Continue?')) return;
   transactions=[]; saveState();
+  // Upsert can't express "all rows removed", so the cloud module (if active) exposes an
+  // explicit RLS-scoped delete for the cleared table. No-op when cloud mode is off.
+  if(window.__cloudClearTxns) window.__cloudClearTxns();
   selectedMonth=monthsAvailable()[0] || todayMonth();
   render(); toast('Transactions cleared');
 }
@@ -1451,6 +1458,9 @@ document.getElementById('resetPlan').onclick=()=>{
 };
 document.getElementById('clearAll').onclick=()=>{
   transactions=[]; overrides={}; plan=defaultPlan(); saveState();
+  // Cloud module (if active) wipes all three tables for the user via RLS-scoped deletes,
+  // since the saveState upsert above can only add/replace rows, never remove them.
+  if(window.__cloudClearAll) window.__cloudClearAll();
   selectedMonth=null; render(); closeSheet(); toast('Cleared');
 };
 
@@ -1473,9 +1483,797 @@ document.getElementById('loadSample').innerHTML = icon('reset') + 'Load sample d
 document.getElementById('resetPlan').innerHTML = icon('reset') + 'Reset plan';
 document.getElementById('clearAll').innerHTML = icon('trash') + 'Clear everything';
 
+/* ---------- Cloud bridge (additive) ----------
+   The core state lives in lexically-scoped `let`/`const` (transactions, overrides, plan,
+   SAMPLE, selectedMonth), which are NOT visible on `window` from the separate cloud module.
+   This bridge exposes read access plus the functions the module needs, and a single setter
+   the module uses to reset in-memory state on sign-out WITHOUT re-reading localStorage.
+   It is a no-op for the local-only build (the module simply never calls it). */
+window.__tallyState = {
+  get transactions(){ return transactions; },
+  get overrides(){ return overrides; },
+  get plan(){ return plan; },
+  get SAMPLE(){ return SAMPLE; },
+  // Force the empty transaction state WITHOUT touching plan/overrides. Needed because
+  // loadState() substitutes SAMPLE whenever the stored array is empty; a logged-in empty
+  // account must show the real empty/import state, not the demo.
+  clearTxnsToEmpty(){ transactions=[]; selectedMonth=monthsAvailable()[0] || todayMonth(); },
+  // Full in-memory wipe for sign-out: no balances, income, or merchant history remain.
+  reset(){ transactions=[]; overrides={}; plan=defaultPlan(); selectedMonth=null; }
+};
+window.render = render;
+window.toast = toast;
+window.defaultPlan = defaultPlan;
+
 /* ---------- Go ---------- */
-loadState();
-render();
+// Boot seam: when the optional Supabase module is active it owns boot order (auth gate +
+// cloud pull) and re-runs this after deciding auth. __tallyBoot is idempotent — it just
+// re-reads localStorage and re-renders — so a double call is safe. When cloud mode is off,
+// this runs immediately and the app behaves exactly as before.
+window.__tallyBoot = () => { loadState(); render(); };
+if (!(window.__tallyCloud && window.__tallyCloud.on)) window.__tallyBoot();
+</script>
+
+<!-- =====================================================================
+     OPTIONAL CLOUD MODULE  (Supabase accounts + sync)
+     ---------------------------------------------------------------------
+     This module is fully ADDITIVE. The legacy app above is the source of
+     truth for rendering and stays local-first. This module only adds:
+       (1) an email + password auth overlay,
+       (2) pull-on-login / debounced write-through-on-save to Supabase,
+       (3) a Sign out control in the existing menu sheet.
+
+     >>> SETUP — paste your project's values into the two consts below. <<<
+     In the Supabase dashboard go to:  Project Settings -> API.
+       SUPABASE_URL      = the "Project URL"            (e.g. https://abcd1234.supabase.co)
+       SUPABASE_ANON_KEY = the "anon" / "public" API key (the long JWT, NOT service_role)
+     Only the anon/public key belongs here. NEVER paste the service_role
+     key into this file — it bypasses row-level security and is never
+     needed in the browser. Run the provided SQL in the SQL editor first.
+
+     Until BOTH consts are replaced with real values, cloud mode stays OFF
+     and the app behaves exactly as it does today (local sample data, no
+     auth screen, zero network requests).
+     ===================================================================== -->
+<script type="module">
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+// Cloud activates ONLY when both consts are real (not the placeholders).
+const CLOUD_ENABLED = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR_')
+                      && SUPABASE_ANON_KEY.length > 40 && !SUPABASE_ANON_KEY.includes('YOUR_');
+
+// Tell the legacy boot line (which ran or will run synchronously) that cloud owns boot.
+window.__tallyCloud = { on: CLOUD_ENABLED };
+
+if (CLOUD_ENABLED) {
+  // The ONLY new runtime dependency, version-pinned, loaded only on a configured build.
+  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.45.4');
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, storageKey:'tally_auth' }
+  });
+
+  /* ---------- small helpers ---------- */
+  // ext_id MUST match dedupe() at ~line 1398 byte-for-byte: date|description|RAW amount.
+  // No toFixed — '15.5' and '70', not '15.50'/'70.00'.
+  const extId = t => t.date + '|' + t.description + '|' + t.amount;
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+  const toast = (m, ok) => { try{ window.toast ? window.toast(m, ok) : 0; }catch(e){} };
+  const chunk = (arr, n) => { const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out; };
+
+  // The SAMPLE demo rows by ext_id. Used to exclude demo data from every cloud upload
+  // (routine write-through AND first-login migration), so the demo never reaches the DB even
+  // in the mixed "load sample, then import one real row" case.
+  const sampleExtIds = () => {
+    const S = (window.__tallyState && Array.isArray(window.__tallyState.SAMPLE)) ? window.__tallyState.SAMPLE : [];
+    return new Set(S.map(extId));
+  };
+
+  /* =====================================================================
+     CLOUD API — pull, push, deletes. user_id is NEVER sent; the DB stamps
+     it via DEFAULT auth.uid() and pins it with WITH CHECK.
+     ===================================================================== */
+
+  async function pullAll(){
+    const [txnRes, ovrRes, planRes] = await Promise.all([
+      sb.from('transactions').select('txn_date,description,amount,ext_id').order('txn_date',{ascending:false}),
+      sb.from('merchant_overrides').select('merchant,category'),
+      sb.from('plan').select('data').maybeSingle()
+    ]);
+    if(txnRes.error)  throw txnRes.error;
+    if(ovrRes.error)  throw ovrRes.error;
+    if(planRes.error) throw planRes.error;
+
+    const txns = (txnRes.data||[]).map(r => ({
+      date: r.txn_date, description: r.description, amount: Number(r.amount) // numeric -> string -> number
+    }));
+    const overrides = {};
+    for(const r of (ovrRes.data||[])) overrides[r.merchant] = r.category;
+    const planData = planRes.data ? planRes.data.data : null;
+    return { txns, overrides, plan: planData };
+  }
+
+  async function pushTransactions(){
+    // ADD-ONLY write-through. Routine saves never delete cloud rows. This is deliberate:
+    //   1. It removes the cross-device truncation race. Because pull happens once per session
+    //      and pushAll() runs on EVERY saveState (sliders, income, category moves), a delete-
+    //      on-push would let a stale device silently wipe rows another device added. Upsert-only
+    //      can never destroy data the local device hasn't seen.
+    //   2. It avoids the PostgREST `in`-filter injection footgun entirely (no hand-built filter
+    //      from user-controlled ext_id text, which contains commas/parens in real descriptions).
+    // Real removals flow through the explicit user actions only: clearTransactions ->
+    // __cloudClearTxns, clearAll -> __cloudClearAll. There is no single-row transaction delete
+    // in the app, so add-only loses nothing.
+    const txns = (window.__tallyState && Array.isArray(window.__tallyState.transactions)) ? window.__tallyState.transactions : [];
+    const demo = sampleExtIds();
+    const rows = txns
+      .map(t => ({ txn_date:t.date, description:t.description, amount:t.amount, ext_id: extId(t) }))
+      .filter(r => !demo.has(r.ext_id)); // never upload SAMPLE demo rows
+    if(!rows.length) return;
+    // Idempotent add by unique(user_id, ext_id). Chunked so big imports stay within limits.
+    for(const part of chunk(rows, 500)){
+      const { error } = await sb.from('transactions')
+        .upsert(part, { onConflict:'user_id,ext_id', ignoreDuplicates:true });
+      if(error) throw error;
+    }
+  }
+
+  // Per-session baseline of override keys this device knows the cloud has (seeded from the
+  // login pull, then kept in sync after each successful push). Gating override deletion on this
+  // baseline means a stale device can only remove keys IT has seen, never keys another device
+  // added that this device hasn't pulled — the same anti-clobber discipline used for txns.
+  let knownOverrideKeys = new Set();
+
+  async function pushOverrides(){
+    const ov = (window.__tallyState && window.__tallyState.overrides && typeof window.__tallyState.overrides==='object') ? window.__tallyState.overrides : {};
+    const localKeys = new Set(Object.keys(ov));
+    const rows = Object.entries(ov).map(([merchant,category]) => ({ merchant, category }));
+    // Upsert present keys (no early return on empty — an emptied map must still reconcile).
+    if(rows.length){
+      const { error } = await sb.from('merchant_overrides')
+        .upsert(rows, { onConflict:'user_id,merchant' });
+      if(error) throw error;
+    }
+    // Reconcile deletions: remove only baseline-known keys that disappeared locally, one
+    // targeted .eq() per key (no hand-built filter; merchant text is never concatenated).
+    const removed = [...knownOverrideKeys].filter(k => !localKeys.has(k));
+    for(const merchant of removed){
+      const { error } = await sb.from('merchant_overrides').delete().eq('merchant', merchant);
+      if(error) throw error;
+    }
+    // The cloud now matches the local map; update the baseline for the next reconcile.
+    knownOverrideKeys = localKeys;
+  }
+
+  async function pushPlan(){
+    const p = (window.__tallyState && window.__tallyState.plan) || {};
+    const { error } = await sb.from('plan').upsert({ data: p }, { onConflict:'user_id' });
+    if(error) throw error;
+  }
+
+  async function pushAll(){
+    // Order: transactions (incl. removal reconciliation), overrides, plan.
+    await pushTransactions();
+    await pushOverrides();
+    await pushPlan();
+  }
+
+  /* =====================================================================
+     DEBOUNCED, SINGLE-FLIGHT WRITE-THROUGH (window.__cloudPush)
+     saveState() stays synchronous; this is fire-and-forget. A burst of
+     slider saves collapses to one network write.
+     ===================================================================== */
+  let pushTimer = null, pushing = false, queued = false;
+  async function runPush(){
+    if(pushing){ queued = true; return; }
+    pushing = true;
+    try{
+      await pushAll();
+    }catch(e){
+      // Never log financial data / tokens. localStorage already holds the data, so nothing
+      // is lost; we surface a calm status and retry on the next save / window focus.
+      toast('Saved on this device, will sync');
+    }finally{
+      pushing = false;
+      if(queued){ queued = false; runPush(); }
+    }
+  }
+  function schedulePush(){
+    if(pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(()=>{ pushTimer = null; runPush(); }, 400);
+  }
+  // Flush any pending debounced push and wait for the in-flight one (used by sign-out).
+  async function flushPush(){
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; await runPush(); }
+    while(pushing){ await sleep(60); }
+  }
+
+  /* =====================================================================
+     DELETE RECONCILIATION HOOKS (called by clearTransactions / clearAll).
+     RLS already scopes every delete to the caller's rows.
+     ===================================================================== */
+  window.__cloudClearTxns = () => {
+    sb.from('transactions').delete().not('ext_id','is',null)
+      .then(({error})=>{ if(error) toast('Saved on this device, will sync'); });
+  };
+  window.__cloudClearAll = () => {
+    Promise.all([
+      sb.from('transactions').delete().not('ext_id','is',null),
+      sb.from('merchant_overrides').delete().not('merchant','is',null),
+      sb.from('plan').delete().not('user_id','is',null)
+    ]).then(rs=>{ if(rs.some(r=>r.error)) toast('Saved on this device, will sync'); });
+  };
+
+  /* =====================================================================
+     BRIDGE: write the tally_* localStorage keys, then call the unchanged
+     legacy loader so all existing normalization (migratePlan etc.) runs.
+     ===================================================================== */
+  // loadState's `(t && t.length) ? t : SAMPLE` falls back to the SAMPLE demo whenever the
+  // stored array is empty. For a signed-in account that legitimately has no transactions we must
+  // NOT show the demo, so we force the real empty state through the bridge and re-render.
+  function forceEmptyIfNoLocalTxns(){
+    let n = 0;
+    try{ const a = JSON.parse(localStorage.getItem('tally_txns') || '[]'); n = Array.isArray(a) ? a.length : 0; }catch(e){}
+    if(!n){
+      window.__tallyState && window.__tallyState.clearTxnsToEmpty();
+      window.render && window.render();
+    }
+  }
+
+  function writeLocalAndBoot({ txns, overrides, plan }){
+    // Write the tally_* keys, then let the UNCHANGED legacy loadState() hydrate the real
+    // (lexically-scoped) globals — so migratePlan() and all existing normalization run.
+    const arr = Array.isArray(txns) ? txns : [];
+    localStorage.setItem('tally_txns', JSON.stringify(arr));
+    localStorage.setItem('tally_overrides', JSON.stringify(overrides && typeof overrides==='object' ? overrides : {}));
+    if(plan != null) localStorage.setItem('tally_plan', JSON.stringify(plan));
+    window.__tallyBoot();
+    // Empty-account guard (see forceEmptyIfNoLocalTxns): never paint SAMPLE for a logged-in user.
+    if(!arr.length) forceEmptyIfNoLocalTxns();
+  }
+
+  /* =====================================================================
+     FIRST-LOGIN MIGRATION — move REAL local data into a fresh empty cloud
+     account; NEVER upload the SAMPLE demo. Runs once per user/device.
+     ===================================================================== */
+  // Return ONLY the genuinely-imported local rows: every local transaction whose ext_id is not
+  // a SAMPLE demo row. Filtering per-row (instead of an all-or-nothing fingerprint of the whole
+  // array) is what keeps the demo out of the cloud in the mixed "loaded sample, then imported
+  // one real row" case — there the combined array is neither pure-SAMPLE nor pure-real.
+  function realLocalTxns(){
+    let raw;
+    try{ raw = JSON.parse(localStorage.getItem('tally_txns') || 'null'); }catch(e){ return []; }
+    if(!Array.isArray(raw) || !raw.length) return [];
+    const demo = sampleExtIds();
+    return raw.filter(t => t && t.date != null && !demo.has(extId(t)));
+  }
+  function localOverridesAreReal(){
+    try{
+      const o = JSON.parse(localStorage.getItem('tally_overrides') || '{}');
+      return o && typeof o==='object' && Object.keys(o).length > 0;
+    }catch(e){ return false; }
+  }
+  function localPlanIsReal(){
+    let p;
+    try{ p = JSON.parse(localStorage.getItem('tally_plan') || 'null'); }catch(e){ return false; }
+    if(!p || typeof p!=='object') return false;
+    const hasIncome = p.income && typeof p.income==='object' && Object.keys(p.income).length > 0;
+    const s = p.split || {};
+    const splitChanged = !(s.needs===50 && s.wants===30 && s.savings===20);
+    const hasBuckets = p.bucketMap && typeof p.bucketMap==='object' && Object.keys(p.bucketMap).length > 0;
+    return hasIncome || splitChanged || hasBuckets;
+  }
+
+  // Snapshot the REAL local data straight from localStorage. MUST be called BEFORE any
+  // cloud-to-local write clobbers the tally_* keys. SAMPLE is excluded by fingerprint.
+  function snapshotRealLocal(){
+    const txnArr        = realLocalTxns(); // SAMPLE demo rows already excluded, per-row
+    const realTxns      = txnArr.length > 0;
+    const realOverrides = localOverridesAreReal();
+    const realPlan      = localPlanIsReal();
+    return {
+      realTxns, realOverrides, realPlan,
+      txnArr,                              // ONLY genuinely-imported rows; never SAMPLE
+      ovr:     realOverrides ? JSON.parse(localStorage.getItem('tally_overrides')) : {},
+      planObj: realPlan ? JSON.parse(localStorage.getItem('tally_plan')) : null
+    };
+  }
+
+  // Decide and run first-login migration. `snap` is the pre-capture from snapshotRealLocal();
+  // `pulled` is the cloud pull. Returns true if it uploaded local data (caller should re-pull).
+  async function firstLoginMigration(userId, snap, pulled){
+    const flagKey = 'tally_migrated_' + userId;
+    const cloudHasData = (pulled.txns && pulled.txns.length) || pulled.plan != null
+                         || (pulled.overrides && Object.keys(pulled.overrides).length);
+
+    if(cloudHasData){
+      // Second-device / returning login: adopt cloud, never re-inject stale local SAMPLE.
+      localStorage.setItem(flagKey, '1');
+      return false;
+    }
+
+    let uploaded = false;
+    // Cloud empty. Upload only REAL local pieces; SAMPLE is excluded by fingerprint.
+    if(snap.realTxns || snap.realOverrides || snap.realPlan){
+      try{
+        if(snap.realTxns){
+          const rows = snap.txnArr.map(t => ({ txn_date:t.date, description:t.description, amount:t.amount, ext_id: extId(t) }));
+          for(const part of chunk(rows, 500)){
+            const { error } = await sb.from('transactions').upsert(part, { onConflict:'user_id,ext_id', ignoreDuplicates:true });
+            if(error) throw error;
+          }
+        }
+        if(snap.realOverrides){
+          const rows = Object.entries(snap.ovr).map(([merchant,category]) => ({ merchant, category }));
+          if(rows.length){ const { error } = await sb.from('merchant_overrides').upsert(rows, { onConflict:'user_id,merchant' }); if(error) throw error; }
+        }
+        if(snap.realPlan){
+          const { error } = await sb.from('plan').upsert({ data: snap.planObj }, { onConflict:'user_id' });
+          if(error) throw error;
+        }
+        uploaded = true;
+      }catch(e){
+        // Upload failed: leave the flag UNSET so we retry on the next login, and surface a
+        // calm status. Local data is untouched (we haven't clobbered it yet on this path).
+        toast('Saved on this device, will sync');
+        return false;
+      }
+    }
+    // empty cloud + only SAMPLE/none locally -> uploaded nothing; SAMPLE never reaches the DB.
+    localStorage.setItem(flagKey, '1');
+    return uploaded;
+  }
+
+  /* =====================================================================
+     AUTH OVERLAY — a sibling of .app appended to <body>, toggled by class
+     (never reparented, never inside #content). Reuses the design system.
+     ===================================================================== */
+  const overlay = document.createElement('div');
+  overlay.id = 'authOverlay';
+  overlay.innerHTML = `
+    <div class="auth-inner">
+      <div class="auth-brand">
+        <span class="auth-logo"></span>
+        <span class="auth-title">Tally</span>
+      </div>
+      <div class="card auth-card" id="authCard"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #authOverlay{ position:fixed; inset:0; z-index:60; background:var(--bg);
+      display:none; align-items:flex-start; justify-content:center; overflow-y:auto; padding:0 16px 40px; }
+    #authOverlay.show{ display:flex; }
+    #authOverlay .auth-inner{ width:100%; max-width:480px; margin:0 auto; padding-top:14vh; }
+    #authOverlay .auth-brand{ display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:22px; }
+    #authOverlay .auth-logo{ width:30px; height:30px; border-radius:8px; background:var(--accent-wash); color:var(--accent);
+      display:flex; align-items:center; justify-content:center; }
+    #authOverlay .auth-title{ font-size:22px; font-weight:600; letter-spacing:-.02em; }
+    #authOverlay .auth-card{ padding:22px; }
+    #authOverlay h2{ font-size:19px; font-weight:600; letter-spacing:-.02em; margin:0 0 4px; }
+    #authOverlay .auth-sub{ font-size:13px; color:var(--ink-2); margin:0 0 18px; line-height:1.5; }
+    #authOverlay label{ display:block; font-size:13px; font-weight:500; color:var(--ink-2); margin:0 0 6px; }
+    #authOverlay input[type=email],
+    #authOverlay input[type=password]{ width:100%; border:1px solid var(--line-strong); border-radius:10px;
+      padding:13px 14px; font-size:16px; color:var(--ink); background:var(--card); outline:none; margin-bottom:14px;
+      font-variant-numeric:tabular-nums; }
+    #authOverlay input:focus{ border-color:var(--accent-line); outline:2px solid var(--accent); outline-offset:1px; }
+    #authOverlay .auth-btn{ background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px;
+      padding:14px 16px; font-size:15px; font-weight:600; width:100%; cursor:pointer; min-height:48px;
+      display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+    #authOverlay .auth-btn:active{ opacity:.92; }
+    #authOverlay .auth-btn:disabled{ opacity:.5; cursor:default; }
+    #authOverlay .auth-err{ font-size:13px; color:var(--bad); background:var(--bad-wash); border:1px solid #ECD7D4;
+      border-radius:8px; padding:10px 12px; margin-bottom:14px; display:none; }
+    #authOverlay .auth-err.show{ display:block; }
+    #authOverlay .auth-note{ font-size:13px; color:var(--ink-2); background:var(--bg-sunken); border:1px solid var(--line);
+      border-radius:8px; padding:12px 14px; margin-bottom:14px; line-height:1.5; }
+    #authOverlay .auth-foot{ margin-top:16px; text-align:center; font-size:13px; color:var(--ink-2); }
+    #authOverlay .auth-link{ background:none; border:none; color:var(--accent); font-size:13px; font-weight:600;
+      cursor:pointer; padding:10px 6px; min-height:44px; }
+    #authOverlay .auth-foot-row{ display:flex; align-items:baseline; justify-content:center; gap:4px; flex-wrap:wrap; }
+    #authOverlay .auth-foot-row .auth-prompt{ font-size:13px; color:var(--ink-2); }
+    /* Sign-out button styled to match the existing sheet rows */
+    #signOutBtn{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:none; border:none;
+      padding:15px 6px; font-size:15px; cursor:pointer; border-bottom:1px solid var(--line); color:var(--ink); }
+    #signOutBtn .ic{ color:var(--ink-2); }`;
+  document.head.appendChild(style);
+
+  const authCard = overlay.querySelector('#authCard');
+  overlay.querySelector('.auth-logo').innerHTML =
+    '<svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5v10M10 5v10M14 5v10M18 5v10M4 17l16-7"/></svg>';
+
+  function showOverlay(){
+    overlay.classList.add('show');
+    // Mark the app behind the overlay inert so Tab focus and screen readers can't reach the
+    // menu button, tab bar, sliders, or transaction rows hidden behind the login screen.
+    const app = document.querySelector('.app'); if(app) app.inert = true;
+    // Move focus into the login card so the first Tab lands on a real field, not hidden chrome.
+    const first = authCard.querySelector('input, button, h2'); if(first){ try{ first.focus(); }catch(e){} }
+  }
+  function hideOverlay(){
+    overlay.classList.remove('show');
+    const app = document.querySelector('.app'); if(app) app.inert = false;
+  }
+
+  // ---- screen renderers (string -> wire) ----
+  let pendingEmail = ''; // carried between create-account and the confirm screen / resend
+
+  function errBox(){ return `<div class="auth-err" id="authErr"></div>`; }
+  function setErr(msg){ const e = authCard.querySelector('#authErr'); if(e){ e.textContent = msg; e.classList.toggle('show', !!msg); } }
+
+  function viewSignIn(){
+    authCard.innerHTML = `
+      <h2>Welcome back</h2>
+      <p class="auth-sub">Sign in to see your spending and plan on any device.</p>
+      ${errBox()}
+      <label for="aEmail">Email</label>
+      <input id="aEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeForHtml(pendingEmail)}" />
+      <label for="aPass">Password</label>
+      <input id="aPass" type="password" autocomplete="current-password" placeholder="Your password" />
+      <button class="auth-btn" id="aSubmit">Sign in</button>
+      <div class="auth-foot">
+        <div class="auth-foot-row"><span class="auth-prompt">New here?</span> <button class="auth-link" id="toCreate">Create account</button></div>
+        <button class="auth-link" id="toForgot">Forgot password?</button>
+      </div>`;
+    const email = authCard.querySelector('#aEmail');
+    const pass  = authCard.querySelector('#aPass');
+    const submit = authCard.querySelector('#aSubmit');
+    const go = async ()=>{
+      setErr('');
+      const e = email.value.trim(), p = pass.value;
+      if(!e || !p){ setErr('Enter your email and password.'); return; }
+      submit.disabled = true;
+      const { error } = await sb.auth.signInWithPassword({ email:e, password:p });
+      submit.disabled = false;
+      if(error){
+        if(/confirm/i.test(error.message||'')){ pendingEmail = e; viewConfirm(); return; }
+        setErr('That email or password is not right.');
+        return;
+      }
+      // Success drives the single onAuthStateChange SIGNED_IN path.
+    };
+    submit.onclick = go;
+    pass.onkeydown = (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); go(); } };
+    authCard.querySelector('#toCreate').onclick = viewCreate;
+    authCard.querySelector('#toForgot').onclick = viewForgot;
+  }
+
+  function viewCreate(){
+    authCard.innerHTML = `
+      <h2>Create your account</h2>
+      <p class="auth-sub">We'll email you a link to confirm it's really you.</p>
+      ${errBox()}
+      <label for="aEmail">Email</label>
+      <input id="aEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeForHtml(pendingEmail)}" />
+      <label for="aPass">Password</label>
+      <input id="aPass" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+      <label for="aPass2">Confirm password</label>
+      <input id="aPass2" type="password" autocomplete="new-password" placeholder="Type it again" />
+      <button class="auth-btn" id="aSubmit">Create account</button>
+      <div class="auth-foot">
+        <div class="auth-foot-row"><span class="auth-prompt">Already have an account?</span> <button class="auth-link" id="toSignin">Sign in</button></div>
+      </div>`;
+    const email = authCard.querySelector('#aEmail');
+    const pass  = authCard.querySelector('#aPass');
+    const pass2 = authCard.querySelector('#aPass2');
+    const submit = authCard.querySelector('#aSubmit');
+    const go = async ()=>{
+      setErr('');
+      const e = email.value.trim(), p = pass.value, p2 = pass2.value;
+      if(!e){ setErr('Enter your email.'); return; }
+      if(p.length < 8){ setErr('Use a password of at least 8 characters.'); return; }
+      if(p !== p2){ setErr('Those passwords do not match.'); return; }
+      submit.disabled = true;
+      const { error } = await sb.auth.signUp({ email:e, password:p });
+      submit.disabled = false;
+      if(error){ setErr(/already/i.test(error.message||'') ? 'That email is already registered. Try signing in.' : 'Could not create the account. Try again.'); return; }
+      // Email confirmation is ON, so signUp returns NO session. Route to confirm screen.
+      pendingEmail = e;
+      viewConfirm();
+    };
+    submit.onclick = go;
+    pass2.onkeydown = (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); go(); } };
+    authCard.querySelector('#toSignin').onclick = viewSignIn;
+  }
+
+  function viewConfirm(){
+    authCard.innerHTML = `
+      <h2>Check your email</h2>
+      <p class="auth-sub">We sent a confirmation link to <b>${pendingEmail ? escapeForHtml(pendingEmail) : 'your inbox'}</b>. Open it to confirm your account, then come back and sign in.</p>
+      ${errBox()}
+      <div class="auth-note">Did not get it? Check spam, or resend below.</div>
+      <button class="auth-btn" id="aResend">Resend email</button>
+      <div class="auth-foot">
+        <button class="auth-link" id="toSignin">Use a different email</button>
+      </div>`;
+    const resend = authCard.querySelector('#aResend');
+    resend.onclick = async ()=>{
+      setErr('');
+      resend.disabled = true;
+      try{ await sb.auth.resend({ type:'signup', email: pendingEmail }); toast('Email sent'); }
+      catch(e){ toast('Email sent'); } // non-enumerating
+      resend.disabled = false;
+    };
+    authCard.querySelector('#toSignin').onclick = ()=>{ viewSignIn(); };
+  }
+
+  function viewForgot(){
+    authCard.innerHTML = `
+      <h2>Reset your password</h2>
+      <p class="auth-sub">Enter your email and we'll send a link to set a new password.</p>
+      ${errBox()}
+      <label for="aEmail">Email</label>
+      <input id="aEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeForHtml(pendingEmail)}" />
+      <button class="auth-btn" id="aSubmit">Send reset link</button>
+      <div class="auth-foot">
+        <button class="auth-link" id="toSignin">Back to sign in</button>
+      </div>`;
+    const email = authCard.querySelector('#aEmail');
+    const submit = authCard.querySelector('#aSubmit');
+    submit.onclick = async ()=>{
+      setErr('');
+      const e = email.value.trim();
+      if(!e){ setErr('Enter your email.'); return; }
+      submit.disabled = true;
+      // Use a stable redirect base (origin + path) so any query/hash present when the page was
+      // opened doesn't round-trip into the emailed reset link.
+      try{ await sb.auth.resetPasswordForEmail(e, { redirectTo: window.location.origin + window.location.pathname }); }catch(err){}
+      submit.disabled = false;
+      // Always the same neutral, non-enumerating line.
+      authCard.innerHTML = `
+        <h2>Check your email</h2>
+        <p class="auth-sub">If that email has an account, a reset link is on its way.</p>
+        <button class="auth-btn" id="toSignin">Back to sign in</button>`;
+      authCard.querySelector('#toSignin').onclick = viewSignIn;
+    };
+    authCard.querySelector('#toSignin').onclick = viewSignIn;
+  }
+
+  function viewSetPassword(){
+    authCard.innerHTML = `
+      <h2>Set a new password</h2>
+      <p class="auth-sub">Choose a new password for your account.</p>
+      ${errBox()}
+      <label for="aPass">New password</label>
+      <input id="aPass" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+      <label for="aPass2">Confirm password</label>
+      <input id="aPass2" type="password" autocomplete="new-password" placeholder="Type it again" />
+      <button class="auth-btn" id="aSubmit">Save new password</button>`;
+    const pass  = authCard.querySelector('#aPass');
+    const pass2 = authCard.querySelector('#aPass2');
+    const submit = authCard.querySelector('#aSubmit');
+    submit.onclick = async ()=>{
+      setErr('');
+      const p = pass.value, p2 = pass2.value;
+      if(p.length < 8){ setErr('Use a password of at least 8 characters.'); return; }
+      if(p !== p2){ setErr('Those passwords do not match.'); return; }
+      submit.disabled = true;
+      const { error } = await sb.auth.updateUser({ password: p });
+      submit.disabled = false;
+      if(error){ setErr('Could not update the password. Try the reset link again.'); return; }
+      recoveryMode = false;
+      toast('Password updated', true);
+      // Now in a normal session — drive into the app.
+      await onSignedIn(currentSession, true);
+    };
+    pass2.onkeydown = (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); submit.click(); } };
+  }
+
+  function escapeForHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  /* =====================================================================
+     SIGN OUT — injected into the existing menu sheet only when signed in.
+     Clears ALL cached financial state so a shared device shows nothing.
+     ===================================================================== */
+  function ensureSignOutButton(){
+    const sheet = document.getElementById('sheet');
+    if(!sheet || document.getElementById('signOutBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'signOutBtn';
+    btn.innerHTML =
+      '<svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>'
+      + 'Sign out';
+    // Place it just before the destructive "Clear everything" row.
+    const clearAll = document.getElementById('clearAll');
+    if(clearAll) sheet.insertBefore(btn, clearAll); else sheet.appendChild(btn);
+    btn.onclick = doSignOut;
+  }
+  function removeSignOutButton(){ const b = document.getElementById('signOutBtn'); if(b) b.remove(); }
+
+  async function doSignOut(){
+    // 1. flush pending push so the last edit isn't dropped when the JWT is torn down.
+    try{ await flushPush(); }catch(e){}
+    // 2. revoke refresh token + clear the tally_auth session.
+    try{ await sb.auth.signOut(); }catch(e){}
+    // 3. UNCONDITIONAL local wipe. signOut() may reject (offline token revoke, storage error),
+    //    in which case the SIGNED_OUT event never fires and the shared-device wipe below would
+    //    be skipped — leaving the prior user's financial data and a usable refresh token cached.
+    //    So we wipe here directly, regardless of whether the network revoke succeeded.
+    onSignedOut();
+  }
+
+  function wipeLocalFinancialData(){
+    localStorage.removeItem('tally_txns');
+    localStorage.removeItem('tally_overrides');
+    localStorage.removeItem('tally_plan');
+    // Belt-and-suspenders: if the network signOut() failed, the GoTrue session (access/refresh
+    // JWT) under 'tally_auth' could survive. Remove it so a failed revoke can't leave a usable
+    // token on a shared device. A successful signOut() already cleared this; remove() is a no-op.
+    localStorage.removeItem('tally_auth');
+    // tally_migrated_<userId> is intentionally kept (not financial data; avoids re-prompt loops).
+  }
+  function resetInMemory(){
+    // Wipe the real lexically-scoped globals via the bridge (window.transactions etc. are
+    // not the live variables — the legacy script uses `let`, so we must go through the seam).
+    if(window.__tallyState) window.__tallyState.reset();
+  }
+
+  /* =====================================================================
+     SINGLE onAuthStateChange LISTENER — the one place that drives the UI.
+     ===================================================================== */
+  let currentSession = null;
+  let pulledThisSession = false; // guard: pull + migration run once per session
+  let sessionUserId = null;
+  let recoveryMode = false;
+
+  async function onSignedIn(session, force){
+    currentSession = session;
+    // Guard against duplicate SIGNED_IN events (refresh / tab focus).
+    if(pulledThisSession && !force){ hideOverlay(); ensureSignOutButton(); return; }
+    pulledThisSession = true;
+    sessionUserId = session.user.id;
+
+    // Strip URL-hash tokens after detectSessionInUrl has consumed them (confirm/reset links),
+    // so an access token isn't left in the address bar / history on a shared machine.
+    if(window.location.hash && /access_token|refresh_token|type=/.test(window.location.hash)){
+      try{ history.replaceState(null, '', window.location.pathname + window.location.search); }catch(e){}
+    }
+
+    try{
+      // 1. Snapshot REAL local data BEFORE anything clobbers the tally_* keys.
+      const flagKey = 'tally_migrated_' + sessionUserId;
+      const snap = localStorage.getItem(flagKey) ? null : snapshotRealLocal();
+      // 2. Pull the cloud.
+      let pulled = await pullAll();
+      // 3. First-login migration: upload real local data only if the cloud account is empty.
+      if(snap){
+        const uploaded = await firstLoginMigration(sessionUserId, snap, pulled);
+        if(uploaded) pulled = await pullAll(); // re-pull the authoritative copy
+      }
+      // 4. Hydrate local + globals from the authoritative cloud state (empty state forced
+      //    when the account has no transactions, so the SAMPLE demo is never shown).
+      writeLocalAndBoot(pulled);
+      // Seed the override-delete baseline from the authoritative cloud keys so later pushes can
+      // safely reconcile removals without clobbering keys this device never pulled.
+      knownOverrideKeys = new Set(Object.keys(pulled.overrides || {}));
+    }catch(e){
+      // Cloud unreachable at login: fall back to whatever is local so the app still works.
+      // No authoritative pull happened, so leave the override baseline empty: that makes the
+      // next push add-only (it can't delete keys it never confirmed the cloud has).
+      knownOverrideKeys = new Set();
+      toast('Showing your device data, will sync');
+      window.__tallyBoot();
+      // Don't let SAMPLE leak for a signed-in user whose local txns were wiped on a prior
+      // sign-out: force the true empty state the same way the happy path does.
+      forceEmptyIfNoLocalTxns();
+    }
+
+    // Install write-through only after the first pull/migration, so we never push before pull.
+    window.__cloudPush = schedulePush;
+    ensureSignOutButton();
+    hideOverlay();
+    window.render && window.render();
+  }
+
+  function onSignedOut(){
+    pulledThisSession = false;
+    currentSession = null;
+    sessionUserId = null;
+    // Remove the push hook so nothing writes through after sign-out.
+    window.__cloudPush = null;
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+    // HARD-WIPE cached financial data + in-memory globals.
+    wipeLocalFinancialData();
+    resetInMemory();
+    removeSignOutButton();
+    window.render && window.render();
+    pendingEmail = '';
+    viewSignIn();
+    showOverlay();
+  }
+
+  sb.auth.onAuthStateChange((event, session)=>{
+    if(event === 'PASSWORD_RECOVERY'){
+      recoveryMode = true;
+      currentSession = session;
+      showOverlay();
+      viewSetPassword();
+      return;
+    }
+    if(event === 'SIGNED_OUT'){ onSignedOut(); return; }
+    if(session){
+      // Don't bounce a recovery session into the app before the password is set.
+      if(recoveryMode && event !== 'SIGNED_IN'){ return; }
+      onSignedIn(session, false);
+    }
+  });
+
+  /* =====================================================================
+     RE-PULL ON FOCUS — close the once-per-session drift window. A tab left
+     open for hours otherwise never sees rows other devices added, and keeps
+     writing through against a stale baseline. We flush pending local writes
+     FIRST (add-only, so nothing is lost), then re-pull the authoritative
+     cloud state and re-hydrate. Single-flight + throttled so rapid focus
+     events don't stack network calls.
+     ===================================================================== */
+  // Cheap structural compare of a pulled cloud state vs the current local tally_* keys. Used to
+  // skip re-hydration (and the view reset it causes) when nothing actually changed.
+  function cloudDiffersFromLocal(pulled){
+    let localTxns = [], localOvr = {}, localPlan = null;
+    try{ localTxns = JSON.parse(localStorage.getItem('tally_txns') || '[]') || []; }catch(e){}
+    try{ localOvr  = JSON.parse(localStorage.getItem('tally_overrides') || '{}') || {}; }catch(e){}
+    try{ localPlan = JSON.parse(localStorage.getItem('tally_plan') || 'null'); }catch(e){}
+    const a = new Set((Array.isArray(localTxns) ? localTxns : []).map(extId));
+    const b = new Set((pulled.txns || []).map(extId));
+    if(a.size !== b.size) return true;
+    for(const k of b){ if(!a.has(k)) return true; }
+    const ovrA = JSON.stringify(Object.keys(localOvr).sort().map(k=>[k,localOvr[k]]));
+    const ovrB = JSON.stringify(Object.keys(pulled.overrides||{}).sort().map(k=>[k,(pulled.overrides||{})[k]]));
+    if(ovrA !== ovrB) return true;
+    if(pulled.plan != null && JSON.stringify(pulled.plan) !== JSON.stringify(localPlan)) return true;
+    return false;
+  }
+
+  let refreshing = false, lastRefresh = 0;
+  async function refreshFromCloud(){
+    if(!window.__cloudPush || !currentSession || recoveryMode) return; // only when signed in
+    if(refreshing) return;
+    if(Date.now() - lastRefresh < 4000){ schedulePush(); return; } // throttle; still retry writes
+    refreshing = true;
+    try{
+      await flushPush();                 // persist local edits before overwriting local from cloud
+      const pulled = await pullAll();     // authoritative cloud state
+      // Only re-hydrate (which re-runs loadState and would reset the current month/tab) when the
+      // cloud actually differs from local — so an idle focus doesn't yank the user's view.
+      if(cloudDiffersFromLocal(pulled)){
+        writeLocalAndBoot(pulled);        // re-hydrate (forces empty state instead of SAMPLE)
+      }
+      knownOverrideKeys = new Set(Object.keys(pulled.overrides || {}));
+      lastRefresh = Date.now();
+    }catch(e){
+      // Offline / transient: keep local data, just retry the pending write on the next focus.
+      schedulePush();
+    }finally{
+      refreshing = false;
+    }
+  }
+  window.addEventListener('focus', refreshFromCloud);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') refreshFromCloud(); });
+
+  /* =====================================================================
+     BOOT: decide auth from the persisted session. If none, show the login
+     overlay; the legacy boot line already rendered local state underneath,
+     so we render an empty shell beneath the overlay for a clean first paint.
+     ===================================================================== */
+  (async ()=>{
+    const { data } = await sb.auth.getSession();
+    if(data && data.session){
+      // onAuthStateChange will also fire INITIAL_SESSION/SIGNED_IN; let it drive.
+      onSignedIn(data.session, false);
+    }else{
+      // No session: do not show SAMPLE behind the login screen — boot an empty shell.
+      localStorage.setItem('tally_txns', '[]');
+      window.__tallyBoot();
+      window.__tallyState && window.__tallyState.clearTxnsToEmpty();
+      window.render && window.render();
+      viewSignIn();
+      showOverlay();
+    }
+  })();
+}
 </script>
 </body>
 </html>

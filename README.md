@@ -1,6 +1,8 @@
 # Tally
 
-A simple personal budgeting web app. It runs entirely in your browser as a single HTML file — nothing to install, no account, and your data never leaves your device (it is saved in the browser's local storage).
+A simple personal budgeting web app. It runs entirely in your browser as a single HTML file — nothing to install and no account needed. By default your data never leaves your device (it is saved in the browser's local storage).
+
+It can also use optional cloud accounts: sign in with an email and password and your transactions and budget are saved to your account, so they follow you to any phone or browser. This is off until it is configured; see [SETUP.md](SETUP.md). When it is not configured, the app behaves exactly as before — fully local, no setup, no account.
 
 ## What it does
 
@@ -17,7 +19,12 @@ A simple personal budgeting web app. It runs entirely in your browser as a singl
 4. Tap any transaction to recategorize it; Tally remembers that merchant next time.
 5. Use the month arrows to move between past and future months.
 
+## Cloud accounts (optional)
+
+Tally can save data to a per-user account instead of just one browser, so it syncs across devices. It uses Supabase for sign-in and storage, with each account's data isolated at the database level. Turning this on is a one-time setup (a free Supabase project, running the database script, and hosting the app on a free HTTPS link). The full walkthrough is in [SETUP.md](SETUP.md). Until it is configured, Tally stays local-only with no account.
+
 ## Notes
 
-- Everything is in one file (`index.html`) with no dependencies and no build step.
-- Transactions and budget are stored locally in the browser, so clearing browser data or switching devices starts fresh. Cross-device sync is a possible future addition.
+- The app is one file (`index.html`) with no build step.
+- Without cloud accounts configured, transactions and budget are stored locally in the browser, so clearing browser data or switching devices starts fresh.
+- With cloud accounts configured and signed in, transactions and budget are saved to the account and follow you across devices.
