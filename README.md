@@ -1,4 +1,4 @@
-# Tally
+# SaveToWIN!
 
 A simple personal budgeting web app. It runs entirely in your browser as a single HTML file — nothing to install and no account needed. By default your data never leaves your device (it is saved in the browser's local storage).
 
@@ -6,7 +6,7 @@ It can also use optional cloud accounts: sign in with an email and password and 
 
 ## What it does
 
-- **Spending** — upload a transactions file (CSV) from your bank and Tally sorts each purchase into categories, then shows where your money went for the month: a total, a breakdown by category, recurring charges, and a month-to-month trend.
+- **Spending** — upload a transactions file (CSV) from your bank and SaveToWIN! sorts each purchase into categories, then shows where your money went for the month: a total, a breakdown by category, recurring charges, and a month-to-month trend.
 - **Plan** — set your take-home income and a Needs / Wants / Savings budget (starting at 50/30/20, fully adjustable). See how much is safe to spend, how each category is tracking, and what is left to save.
 
 ## Using it
@@ -15,13 +15,13 @@ It can also use optional cloud accounts: sign in with an email and password and 
 2. To use your own numbers, download your transactions as a CSV from your bank:
    - **Wells Fargo:** sign in → account activity → Download → Comma Delimited (.csv)
    - **American Express:** Statements & Activity → Download → CSV
-3. On the Spending tab, tap **Add transactions** and pick the file. Tally reads both the Wells Fargo and American Express formats.
-4. Tap any transaction to recategorize it; Tally remembers that merchant next time.
+3. On the Spending tab, tap **Add transactions** and pick the file. SaveToWIN! reads both the Wells Fargo and American Express formats.
+4. Tap any transaction to recategorize it; SaveToWIN! remembers that merchant next time.
 5. Use the month arrows to move between past and future months.
 
 ## Cloud accounts (optional)
 
-Tally can save data to a per-user account instead of just one browser, so it syncs across devices. It uses Supabase for sign-in and storage, with each account's data isolated at the database level. Turning this on is a one-time setup (a free Supabase project, running the database script, and hosting the app on a free HTTPS link). The full walkthrough is in [SETUP.md](SETUP.md). Until it is configured, Tally stays local-only with no account.
+SaveToWIN! can save data to a per-user account instead of just one browser, so it syncs across devices. It uses Supabase for sign-in and storage, with each account's data isolated at the database level. Turning this on is a one-time setup (a free Supabase project, running the database script, and hosting the app on a free HTTPS link). The full walkthrough is in [SETUP.md](SETUP.md). Until it is configured, SaveToWIN! stays local-only with no account.
 
 ## Notes
 

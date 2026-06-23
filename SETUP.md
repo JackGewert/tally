@@ -1,4 +1,4 @@
-# Tally — Cloud Accounts Setup
+# SaveToWIN! — Cloud Accounts Setup
 
 This is the one-time setup to turn on cloud accounts, so your sister can sign in
 on her phone and have her data saved to her account instead of just one browser.
@@ -6,7 +6,7 @@ on her phone and have her data saved to her account instead of just one browser.
 You only do this once. Most of it is logging into services and copying two values.
 The app code itself is already built — you are not writing any code here.
 
-If you skip all of this, Tally still works: open `index.html` and it runs fully
+If you skip all of this, SaveToWIN! still works: open `index.html` and it runs fully
 locally in the browser with no account and no setup.
 
 ---
@@ -35,7 +35,7 @@ locally in the browser with no account and no setup.
    new query in the SQL Editor.
 3. Click **Run**.
 
-   This creates the tables Tally needs and the per-user security policies (row level
+   This creates the tables SaveToWIN! needs and the per-user security policies (row level
    security), so each signed-in user can only ever see and change their own rows.
 
 ### 3. Email sign-in
@@ -64,12 +64,12 @@ const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 Replace the placeholders with the **Project URL** and the **`anon` `public`** key
 from step 1. Keep the quotes. Save the file.
 
-(If you leave the placeholders as-is, Tally just runs in local-only mode with no
+(If you leave the placeholders as-is, SaveToWIN! just runs in local-only mode with no
 accounts — that's the fallback, not an error.)
 
 ### 5. Host it so she gets a phone link
 
-To use Tally on a phone, it needs to be on a real HTTPS link she can bookmark.
+To use SaveToWIN! on a phone, it needs to be on a real HTTPS link she can bookmark.
 The repo is private at **github.com/JackGewert/tally**. Either of these is free and
 connects straight to the repo:
 

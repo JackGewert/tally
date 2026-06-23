@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Tally</title>
+<title>SaveToWIN!</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231F6B4F' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 16l5-5 3 3 7-7'/%3E%3Cpath d='M14 6h5v5'/%3E%3Cpath d='M5 20h14'/%3E%3C/svg%3E" />
 <style>
   :root{
     /* SURFACES */
@@ -280,6 +281,8 @@
   .sheet button .ic{color:var(--ink-2)}
   .sheet button.danger{color:var(--bad)}
   .sheet button.danger .ic{color:var(--bad)}
+  .win{ color:var(--accent); }
+  .appfoot{ text-align:center; font-size:12px; color:var(--muted); padding:18px 0 28px; letter-spacing:.01em; }
 </style>
 </head>
 <body>
@@ -287,7 +290,7 @@
   <header>
     <div class="brand">
       <span class="logo" id="brandLogo"></span>
-      <h1>Tally</h1>
+      <h1>SaveTo<span class="win">WIN!</span></h1>
     </div>
     <button class="menu-btn" id="menuBtn" aria-label="Menu"></button>
   </header>
@@ -303,6 +306,7 @@
        The Add button / Clear control are rendered INSIDE the Spending content and
        trigger this input via the delegated handlers in wireSpendingExtras(). -->
   <input type="file" id="fileInput" accept=".csv" multiple hidden />
+  <div class="appfoot">Made by Jack Gewert</div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -345,7 +349,7 @@ const ICONS = {
   home:    '<path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>',
   sparkle: '<path d="M12 4l1.8 4.7L18.5 10.5l-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8L12 4Z"/>',
   coins:   '<path d="M5 9h12a3 3 0 0 1 0 6H5z"/><path d="M5 9v6M9 9v6M13 9v6"/>',
-  logo:    '<path d="M6 5v10M10 5v10M14 5v10M18 5v10M4 17l16-7"/>',
+  logo:    '<path d="M4 16l5-5 3 3 7-7"/><path d="M14 6h5v5"/><path d="M5 20h14"/>',
   chevL:    '<path d="M15 6l-6 6 6 6"/>',
   chevR:    '<path d="M9 6l6 6-6 6"/>',
   chevDown: '<path d="M6 9l6 6 6-6"/>',
@@ -653,7 +657,7 @@ function importControlsHtml(){
         <li>Sign in, go to <b>Statements &amp; Activity</b></li>
         <li>Click <b>Download</b>, choose <b>CSV / Excel</b></li>
       </ul>
-      <p class="note">Then tap "Add transactions" and pick the file. You can add both banks and Tally combines them.</p>
+      <p class="note">Then tap "Add transactions" and pick the file. You can add both banks and SaveToWIN! combines them.</p>
     </div>
   </div>`;
 }
@@ -1835,9 +1839,10 @@ if (CLOUD_ENABLED) {
     <div class="auth-inner">
       <div class="auth-brand">
         <span class="auth-logo"></span>
-        <span class="auth-title">Tally</span>
+        <span class="auth-title">SaveTo<span class="win">WIN!</span></span>
       </div>
       <div class="card auth-card" id="authCard"></div>
+      <div class="auth-by">Made by Jack Gewert</div>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -1875,6 +1880,9 @@ if (CLOUD_ENABLED) {
       cursor:pointer; padding:10px 6px; min-height:44px; }
     #authOverlay .auth-foot-row{ display:flex; align-items:baseline; justify-content:center; gap:4px; flex-wrap:wrap; }
     #authOverlay .auth-foot-row .auth-prompt{ font-size:13px; color:var(--ink-2); }
+    #authOverlay .auth-by{ text-align:center; font-size:12px; color:var(--muted); margin-top:24px; letter-spacing:.01em; }
+    #authOverlay .auth-success{ font-size:13px; color:var(--good); background:var(--good-wash); border:1px solid #CDE4D6;
+      border-radius:8px; padding:11px 13px; margin-bottom:16px; line-height:1.45; }
     /* Sign-out button styled to match the existing sheet rows */
     #signOutBtn{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:none; border:none;
       padding:15px 6px; font-size:15px; cursor:pointer; border-bottom:1px solid var(--line); color:var(--ink); }
@@ -1883,7 +1891,7 @@ if (CLOUD_ENABLED) {
 
   const authCard = overlay.querySelector('#authCard');
   overlay.querySelector('.auth-logo').innerHTML =
-    '<svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5v10M10 5v10M14 5v10M18 5v10M4 17l16-7"/></svg>';
+    '<svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16l5-5 3 3 7-7"/><path d="M14 6h5v5"/><path d="M5 20h14"/></svg>';
 
   function showOverlay(){
     overlay.classList.add('show');
@@ -1900,14 +1908,18 @@ if (CLOUD_ENABLED) {
 
   // ---- screen renderers (string -> wire) ----
   let pendingEmail = ''; // carried between create-account and the confirm screen / resend
+  let signupInProgress = false;     // true between signUp() and the auto-session we discard
+  let signupJustCreatedEmail = '';  // email to pre-fill + greet on the sign-in screen after signup
 
   function errBox(){ return `<div class="auth-err" id="authErr"></div>`; }
   function setErr(msg){ const e = authCard.querySelector('#authErr'); if(e){ e.textContent = msg; e.classList.toggle('show', !!msg); } }
 
-  function viewSignIn(){
+  function viewSignIn(opts){
+    const created = opts && opts.created === true;
     authCard.innerHTML = `
-      <h2>Welcome back</h2>
-      <p class="auth-sub">Sign in to see your spending and plan on any device.</p>
+      <h2>${created ? 'Account created' : 'Welcome back'}</h2>
+      <p class="auth-sub">${created ? 'Now sign in with the email and password you just set.' : 'Sign in to see your spending and plan on any device.'}</p>
+      ${created ? '<div class="auth-success">Your account is ready — sign in to get started.</div>' : ''}
       ${errBox()}
       <label for="aEmail">Email</label>
       <input id="aEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeForHtml(pendingEmail)}" />
@@ -1944,7 +1956,7 @@ if (CLOUD_ENABLED) {
   function viewCreate(){
     authCard.innerHTML = `
       <h2>Create your account</h2>
-      <p class="auth-sub">We'll email you a link to confirm it's really you.</p>
+      <p class="auth-sub">Pick an email and a password. You'll use them to sign in next.</p>
       ${errBox()}
       <label for="aEmail">Email</label>
       <input id="aEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" value="${escapeForHtml(pendingEmail)}" />
@@ -1967,12 +1979,17 @@ if (CLOUD_ENABLED) {
       if(p.length < 8){ setErr('Use a password of at least 8 characters.'); return; }
       if(p !== p2){ setErr('Those passwords do not match.'); return; }
       submit.disabled = true;
+      signupInProgress = true;
+      signupJustCreatedEmail = e;
       const { error } = await sb.auth.signUp({ email:e, password:p });
       submit.disabled = false;
-      if(error){ setErr(/already/i.test(error.message||'') ? 'That email is already registered. Try signing in.' : 'Could not create the account. Try again.'); return; }
-      // Email confirmation is ON, so signUp returns NO session. Route to confirm screen.
-      pendingEmail = e;
-      viewConfirm();
+      if(error){
+        signupInProgress = false; signupJustCreatedEmail = '';
+        setErr(/already/i.test(error.message||'') ? 'That email is already registered. Try signing in.' : 'Could not create the account. Try again.'); return;
+      }
+      // Confirmation is off, so signUp auto-creates a session. We deliberately do NOT enter the
+      // app: the onAuthStateChange guard discards that session and sends the user to the sign-in
+      // screen to log in with the account they just made (email pre-filled, success greeting).
     };
     submit.onclick = go;
     pass2.onkeydown = (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); go(); } };
@@ -2180,8 +2197,14 @@ if (CLOUD_ENABLED) {
     resetInMemory();
     removeSignOutButton();
     window.render && window.render();
-    pendingEmail = '';
-    viewSignIn();
+    if(signupJustCreatedEmail){
+      pendingEmail = signupJustCreatedEmail;
+      signupJustCreatedEmail = '';
+      viewSignIn({ created:true });
+    }else{
+      pendingEmail = '';
+      viewSignIn();
+    }
     showOverlay();
   }
 
@@ -2194,6 +2217,14 @@ if (CLOUD_ENABLED) {
       return;
     }
     if(event === 'SIGNED_OUT'){ onSignedOut(); return; }
+    if(signupInProgress && event === 'SIGNED_IN'){
+      // A brand-new signup auto-created a session (email confirmation is off). Do NOT enter the
+      // app: discard this session so the user lands on the sign-in screen and logs in with the
+      // account they just made. onSignedOut handles the redirect (email pre-filled + greeting).
+      signupInProgress = false;
+      sb.auth.signOut();
+      return;
+    }
     if(session){
       // Don't bounce a recovery session into the app before the password is set.
       if(recoveryMode && event !== 'SIGNED_IN'){ return; }
